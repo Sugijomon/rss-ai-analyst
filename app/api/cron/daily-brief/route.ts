@@ -49,7 +49,7 @@ const KEYWORDS = [
 const CONFIG = {
   maxArticlesPerFeed: 5,
   hoursLookback: 168, // 7 days to catch more articles
-  minRelevanceScore: 6,
+  minRelevanceScore: 5,
   maxArticlesInBrief: 15,
   recipientEmail: process.env.RECIPIENT_EMAIL || '',
 };
@@ -96,7 +96,7 @@ async function fetchRecentArticles(): Promise<Article[]> {
           pubDate: item.pubDate ? new Date(item.pubDate) : new Date(),
           content: item.content || item.contentSnippet || item.summary || '',
         }))
-        .filter(item => passesKeywordFilter(item)); // Pre-filter before Claude
+        // .filter(item => passesKeywordFilter(item)); // Pre-filter before Claude
 
       allArticles.push(...recentItems);
       console.log(`✓ ${feedUrl.split('/')[2]}: ${recentItems.length} relevant articles`);
