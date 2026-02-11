@@ -48,8 +48,8 @@ const KEYWORDS = [
 
 const CONFIG = {
   maxArticlesPerFeed: 5,
-  hoursLookback: 72, // 3 days to catch more articles
-  minRelevanceScore: 7,
+  hoursLookback: 168, // 7 days to catch more articles
+  minRelevanceScore: 6,
   maxArticlesInBrief: 15,
   recipientEmail: process.env.RECIPIENT_EMAIL || '',
 };
