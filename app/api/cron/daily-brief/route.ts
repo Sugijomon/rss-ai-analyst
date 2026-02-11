@@ -10,45 +10,64 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const parser = new Parser();
 
 const RSS_FEEDS = [
-  // EU & Regulatory
+  // === YOUR GOOGLE ALERTS (from Feedly) ===
+
+  // AI Governance Jobs
+  'https://www.google.com/alerts/feeds/09449303513221250695/712363126844262138',
+  'https://www.google.com/alerts/feeds/09449303513221250695/8360176497618448162',
+  'https://www.google.com/alerts/feeds/09449303513221250695/8360176497618447048',
+  'https://www.google.com/alerts/feeds/09449303513221250695/16104860397407571115',
+  'https://www.google.com/alerts/feeds/09449303513221250695/712363126844260895',
+  'https://www.google.com/alerts/feeds/09449303513221250695/10529135105258354989',
+
+  // AI Regulation
+  'https://www.google.com/alerts/feeds/09449303513221250695/10002060156204656018',
+
+  // Filter out (negative alerts - still useful to monitor)
+  'https://www.google.com/alerts/feeds/09449303513221250695/17057346079060550580',
+  'https://www.google.com/alerts/feeds/09449303513221250695/18323230671601558587',
+
+  // AI Compliance NL
+  'https://www.google.com/alerts/feeds/09449303513221250695/8058027391759189925',
+
+  // AI Risk
+  'https://www.google.com/alerts/feeds/09449303513221250695/1576620731540475628',
+
+  // AI Wet Nederland
+  'https://www.google.com/alerts/feeds/09449303513221250695/8506129854880045759',
+
+  // AI Lawfirms
+  'https://www.google.com/alerts/feeds/09449303513221250695/10002060156204655808',
+
+  // Shadow IT
+  'https://www.google.com/alerts/feeds/09449303513221250695/451554340955659707',
+
+  // EC AI Act
+  'https://www.google.com/alerts/feeds/09449303513221250695/9227181759097594092',
+
+  // AI Industry Impact
+  'https://www.google.com/alerts/feeds/09449303513221250695/13385062984594143224',
+
+  // AI Workplace Governance
+  'https://www.google.com/alerts/feeds/09449303513221250695/7124011456707508388',
+
+  // ISO 42001
+  'https://www.google.com/alerts/feeds/09449303513221250695/2164771014014474126',
+
+  // EU AI Act (main)
+  'https://www.google.com/alerts/feeds/09449303513221250695/3370223869929194536',
+  'https://www.google.com/alerts/feeds/09449303513221250695/14759970723841580188',
+
+  // === ADDITIONAL HIGH-QUALITY SOURCES ===
   'https://digital-strategy.ec.europa.eu/en/rss.xml',
-  'https://edpb.europa.eu/rss.xml',
   'https://www.nist.gov/news-events/news/rss.xml',
-  'https://www.iso.org/rss/iso-newsroom.xml',
-  // AI News & Industry
   'https://artificialintelligence-news.com/feed/',
   'https://www.technologyreview.com/feed/',
-  'https://venturebeat.com/category/ai/feed/',
-  'https://aisnakeoil.substack.com/feed',
-  // Add your Feedly feeds below after OPML export
-];
-
-// Pre-filter keywords - article must contain at least one
-// This runs BEFORE Claude to save API costs
-const KEYWORDS = [
-  // EU AI Act
-  'eu ai act', 'ai act', 'artificial intelligence act', 'ai verordening',
-  // Standards
-  'iso 42001', 'iso/iec 42001', 'iso 42005', 'nist ai', 'ai rmf',
-  // Governance
-  'ai governance', 'ai compliance', 'ai risk', 'responsible ai',
-  'ai accountability', 'ai transparency', 'ai audit',
-  // SME & Dutch context
-  'sme', 'mkb', 'small business', 'midden- en kleinbedrijf',
-  'ai literacy', 'ai skills', 'ai training',
-  // Regulation & Enforcement
-  'ai regulation', 'algorithmic', 'ai enforcement', 'ai fine',
-  'ai liability', 'ai certification', 'conformity assessment',
-  // RouteAI relevant
-  'ai adoption', 'ai implementation', 'ai policy',
-  'high-risk ai', 'limited risk', 'general purpose ai', 'gpai',
-  // European context
-  'european ai', 'dutch ai', 'nederland ai', 'edih',
 ];
 
 const CONFIG = {
-  maxArticlesPerFeed: 5,
-  hoursLookback: 168, // 7 days to catch more articles
+  maxArticlesPerFeed: 10,
+  hoursLookback: 168, // 7 days
   minRelevanceScore: 5,
   maxArticlesInBrief: 15,
   recipientEmail: process.env.RECIPIENT_EMAIL || '',
@@ -71,15 +90,10 @@ interface AnalyzedArticle {
   opportunity?: string;
 }
 
-// Keyword pre-filter - runs before Claude to save costs
-function passesKeywordFilter(article: Article): boolean {
-  const text = `${article.title} ${article.content}`.toLowerCase();
-  return KEYWORDS.some(keyword => text.includes(keyword));
-}
-
 async function fetchRecentArticles(): Promise<Article[]> {
   const cutoffDate = new Date(Date.now() - CONFIG.hoursLookback * 60 * 60 * 1000);
   const allArticles: Article[] = [];
+  const seenLinks = new Set<string>(); // Deduplication
 
   for (const feedUrl of RSS_FEEDS) {
     try {
@@ -96,16 +110,23 @@ async function fetchRecentArticles(): Promise<Article[]> {
           pubDate: item.pubDate ? new Date(item.pubDate) : new Date(),
           content: item.content || item.contentSnippet || item.summary || '',
         }))
-        // .filter(item => passesKeywordFilter(item)); // Pre-filter before Claude
+        .filter(item => {
+          // Deduplicate by URL
+          if (seenLinks.has(item.link)) return false;
+          seenLinks.add(item.link);
+          return true;
+        });
 
       allArticles.push(...recentItems);
-      console.log(`✓ ${feedUrl.split('/')[2]}: ${recentItems.length} relevant articles`);
+      if (recentItems.length > 0) {
+        console.log(`✓ Feed ${RSS_FEEDS.indexOf(feedUrl) + 1}: ${recentItems.length} articles`);
+      }
     } catch (error) {
-      console.error(`✗ Error fetching ${feedUrl}:`, error);
+      console.error(`✗ Error fetching feed ${RSS_FEEDS.indexOf(feedUrl) + 1}:`, error);
     }
   }
 
-  console.log(`Total after keyword filter: ${allArticles.length} articles`);
+  console.log(`Total unique articles: ${allArticles.length}`);
   return allArticles;
 }
 
@@ -127,6 +148,7 @@ FOCUS ON:
 - AI literacy and training requirements
 - Regulatory enforcement actions or fines
 - EDIH network developments in Netherlands
+- AI governance job market signals
 
 PRIORITIZE articles about:
 - Dutch or European AI regulation
@@ -134,6 +156,7 @@ PRIORITIZE articles about:
 - AI governance tools or frameworks
 - ISO 42001 certification guidance
 - Practical AI implementation for non-technical organizations
+- Shadow IT and AI tool governance in workplaces
 
 IGNORE articles about:
 - US-only policy (unless directly relevant to EU)
@@ -145,7 +168,7 @@ IGNORE articles about:
 
 For each article:
 1. Score relevance (1-10) for an AI governance consultant serving Dutch SMEs
-2. If score < 7, output: {"score": X, "skip": true}
+2. If score < ${CONFIG.minRelevanceScore}, output: {"score": X, "skip": true}
 3. Otherwise produce JSON:
 {
   "score": X,
@@ -180,7 +203,7 @@ Return a JSON array with one result per article.`;
         const results = JSON.parse(jsonMatch[0]);
         const relevant = results.filter((r: { skip?: boolean; score: number }) => !r.skip && r.score >= CONFIG.minRelevanceScore);
         analyzed.push(...relevant);
-        console.log(`Batch ${i/batchSize + 1}: ${relevant.length}/${batch.length} articles passed`);
+        console.log(`Batch ${Math.floor(i/batchSize) + 1}: ${relevant.length}/${batch.length} passed`);
       }
     } catch (error) {
       console.error('Error analyzing batch:', error);
@@ -205,7 +228,8 @@ function formatEmailBrief(articles: AnalyzedArticle[]): string {
   });
 
   const regulatory = articles.filter(a => a.tags.includes('Regulatory'));
-  const market = articles.filter(a => a.tags.includes('Market') || a.tags.includes('Jobs'));
+  const market = articles.filter(a => a.tags.includes('Market'));
+  const jobs = articles.filter(a => a.tags.includes('Jobs'));
   const opportunities = articles.filter(a => a.opportunity);
 
   let html = `
@@ -213,7 +237,7 @@ function formatEmailBrief(articles: AnalyzedArticle[]): string {
     <h1 style="color: #1a202c; border-bottom: 2px solid #4299e1; padding-bottom: 10px;">
       🤖 Daily AI Governance Intelligence Brief
     </h1>
-    <p style="color: #718096;"><strong>${date}</strong> · ${articles.length} relevant items selected</p>
+    <p style="color: #718096;"><strong>${date}</strong> · ${articles.length} relevant items · ${RSS_FEEDS.length} sources monitored</p>
     <hr style="border: 1px solid #e2e8f0;">
   `;
 
@@ -224,8 +248,14 @@ function formatEmailBrief(articles: AnalyzedArticle[]): string {
   }
 
   if (market.length > 0) {
-    html += `<h2 style="color: #2d3748;">📊 Market & Jobs Signals</h2><ul>`;
+    html += `<h2 style="color: #2d3748;">📊 Market Signals</h2><ul>`;
     market.forEach(a => html += `<li><a href="${a.url}" style="color: #4299e1;">${a.title}</a></li>`);
+    html += `</ul>`;
+  }
+
+  if (jobs.length > 0) {
+    html += `<h2 style="color: #2d3748;">💼 Jobs Signals</h2><ul>`;
+    jobs.forEach(a => html += `<li><a href="${a.url}" style="color: #4299e1;">${a.title}</a></li>`);
     html += `</ul>`;
   }
 
@@ -264,8 +294,7 @@ function formatEmailBrief(articles: AnalyzedArticle[]): string {
   html += `
     <hr style="border: 1px solid #e2e8f0; margin-top: 30px;">
     <p style="color: #a0aec0; font-size: 12px;">
-      RouteAI Intelligence Brief · Powered by Claude · 
-      Filtered from ${RSS_FEEDS.length} sources
+      RouteAI Intelligence Brief · Powered by Claude · ${RSS_FEEDS.length} sources monitored
     </p>
     </div>`;
 
@@ -281,24 +310,22 @@ export async function GET(request: Request) {
   try {
     console.log('🚀 Starting daily brief...');
     const articles = await fetchRecentArticles();
-    console.log(`📥 ${articles.length} articles after keyword filter`);
 
     if (articles.length === 0) {
       return Response.json({ 
-        message: 'No articles passed keyword filter', 
-        tip: 'Try adding more RSS feeds or expanding KEYWORDS array',
+        message: 'No articles found in any feed', 
+        feedsChecked: RSS_FEEDS.length,
         count: 0 
       });
     }
 
     const analyzed = await analyzeWithClaude(articles);
-    console.log(`🤖 ${analyzed.length} articles selected by Claude`);
+    console.log(`🤖 ${analyzed.length} articles selected`);
 
     if (analyzed.length === 0) {
       return Response.json({ 
         message: 'No relevant articles found by Claude',
         articlesChecked: articles.length,
-        tip: 'Try lowering minRelevanceScore or expanding feeds',
         count: 0 
       });
     }
@@ -312,11 +339,10 @@ export async function GET(request: Request) {
       html: emailHtml,
     });
 
-    console.log(`✅ Email sent to ${CONFIG.recipientEmail}`);
-
     return Response.json({
       success: true,
-      articlesAfterKeywordFilter: articles.length,
+      feedsChecked: RSS_FEEDS.length,
+      articlesFound: articles.length,
       articlesSelected: analyzed.length,
       timestamp: new Date().toISOString()
     });
