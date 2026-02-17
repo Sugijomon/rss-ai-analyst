@@ -1,3 +1,4 @@
+import { NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import Parser from 'rss-parser';
 import { Resend } from 'resend';
@@ -66,8 +67,8 @@ const RSS_FEEDS = [
 ];
 
 const CONFIG = {
-  maxArticlesPerFeed: 10,
-  hoursLookback: 168, // 7 days
+  maxArticlesPerFeed: 3,
+  hoursLookback: 48,
   minRelevanceScore: 5,
   maxArticlesInBrief: 15,
   recipientEmail: process.env.RECIPIENT_EMAIL || '',
@@ -93,7 +94,7 @@ interface AnalyzedArticle {
 async function fetchRecentArticles(): Promise<Article[]> {
   const cutoffDate = new Date(Date.now() - CONFIG.hoursLookback * 60 * 60 * 1000);
   const allArticles: Article[] = [];
-  const seenLinks = new Set<string>(); // Deduplication
+  const seenLinks = new Set<string>();
 
   for (const feedUrl of RSS_FEEDS) {
     try {
@@ -111,7 +112,6 @@ async function fetchRecentArticles(): Promise<Article[]> {
           content: item.content || item.contentSnippet || item.summary || '',
         }))
         .filter(item => {
-          // Deduplicate by URL
           if (seenLinks.has(item.link)) return false;
           seenLinks.add(item.link);
           return true;
@@ -203,7 +203,7 @@ Return a JSON array with one result per article.`;
         const results = JSON.parse(jsonMatch[0]);
         const relevant = results.filter((r: { skip?: boolean; score: number }) => !r.skip && r.score >= CONFIG.minRelevanceScore);
         analyzed.push(...relevant);
-        console.log(`Batch ${Math.floor(i/batchSize) + 1}: ${relevant.length}/${batch.length} passed`);
+        console.log(`Batch ${Math.floor(i / batchSize) + 1}: ${relevant.length}/${batch.length} passed`);
       }
     } catch (error) {
       console.error('Error analyzing batch:', error);
@@ -301,33 +301,22 @@ function formatEmailBrief(articles: AnalyzedArticle[]): string {
   return html;
 }
 
-export async function GET(request: Request) {
-  const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return new Response('Unauthorized', { status: 401 });
-  }
-
+async function processAndSendBrief() {
   try {
     console.log('🚀 Starting daily brief...');
     const articles = await fetchRecentArticles();
 
     if (articles.length === 0) {
-      return Response.json({ 
-        message: 'No articles found in any feed', 
-        feedsChecked: RSS_FEEDS.length,
-        count: 0 
-      });
+      console.log('⚠️ No articles found in any feed');
+      return;
     }
 
     const analyzed = await analyzeWithClaude(articles);
     console.log(`🤖 ${analyzed.length} articles selected`);
 
     if (analyzed.length === 0) {
-      return Response.json({ 
-        message: 'No relevant articles found by Claude',
-        articlesChecked: articles.length,
-        count: 0 
-      });
+      console.log('⚠️ No relevant articles found by Claude');
+      return;
     }
 
     const emailHtml = formatEmailBrief(analyzed);
@@ -339,20 +328,20 @@ export async function GET(request: Request) {
       html: emailHtml,
     });
 
-    return Response.json({
-      success: true,
-      feedsChecked: RSS_FEEDS.length,
-      articlesFound: articles.length,
-      articlesSelected: analyzed.length,
-      timestamp: new Date().toISOString()
-    });
-
+    console.log('✅ Email sent successfully');
   } catch (error) {
-    console.error('❌ Error:', error);
-    return Response.json({ error: 'Failed to generate brief', details: String(error) }, { status: 500 });
+    console.error('❌ Error in processAndSendBrief:', error);
   }
 }
 
 export async function POST(request: Request) {
-  return GET(request);
+  const authHeader = request.headers.get('authorization');
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  // Fire and forget — returns 200 immediately, processing continues in background
+  processAndSendBrief();
+
+  return NextResponse.json({ status: 'started', message: 'Brief generation started' }, { status: 200 });
 }
