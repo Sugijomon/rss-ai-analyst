@@ -340,6 +340,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  await processAndSendBrief(); // terug naar await
+
+  return NextResponse.json({ status: 'done', message: 'Brief sent' }, { status: 200 });
+}
+
   // Fire and forget — returns 200 immediately, processing continues in background
   processAndSendBrief();
 
