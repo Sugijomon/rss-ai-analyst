@@ -11,55 +11,26 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const parser = new Parser();
 
 const RSS_FEEDS = [
-  // === YOUR GOOGLE ALERTS (from Feedly) ===
-
-  // AI Governance Jobs
   'https://www.google.com/alerts/feeds/09449303513221250695/712363126844262138',
   'https://www.google.com/alerts/feeds/09449303513221250695/8360176497618448162',
   'https://www.google.com/alerts/feeds/09449303513221250695/8360176497618447048',
   'https://www.google.com/alerts/feeds/09449303513221250695/16104860397407571115',
   'https://www.google.com/alerts/feeds/09449303513221250695/712363126844260895',
   'https://www.google.com/alerts/feeds/09449303513221250695/10529135105258354989',
-
-  // AI Regulation
   'https://www.google.com/alerts/feeds/09449303513221250695/10002060156204656018',
-
-  // Filter out (negative alerts - still useful to monitor)
   'https://www.google.com/alerts/feeds/09449303513221250695/17057346079060550580',
   'https://www.google.com/alerts/feeds/09449303513221250695/18323230671601558587',
-
-  // AI Compliance NL
   'https://www.google.com/alerts/feeds/09449303513221250695/8058027391759189925',
-
-  // AI Risk
   'https://www.google.com/alerts/feeds/09449303513221250695/1576620731540475628',
-
-  // AI Wet Nederland
   'https://www.google.com/alerts/feeds/09449303513221250695/8506129854880045759',
-
-  // AI Lawfirms
   'https://www.google.com/alerts/feeds/09449303513221250695/10002060156204655808',
-
-  // Shadow IT
   'https://www.google.com/alerts/feeds/09449303513221250695/451554340955659707',
-
-  // EC AI Act
   'https://www.google.com/alerts/feeds/09449303513221250695/9227181759097594092',
-
-  // AI Industry Impact
   'https://www.google.com/alerts/feeds/09449303513221250695/13385062984594143224',
-
-  // AI Workplace Governance
   'https://www.google.com/alerts/feeds/09449303513221250695/7124011456707508388',
-
-  // ISO 42001
   'https://www.google.com/alerts/feeds/09449303513221250695/2164771014014474126',
-
-  // EU AI Act (main)
   'https://www.google.com/alerts/feeds/09449303513221250695/3370223869929194536',
   'https://www.google.com/alerts/feeds/09449303513221250695/14759970723841580188',
-
-  // === ADDITIONAL HIGH-QUALITY SOURCES ===
   'https://digital-strategy.ec.europa.eu/en/rss.xml',
   'https://www.nist.gov/news-events/news/rss.xml',
   'https://artificialintelligence-news.com/feed/',
@@ -301,37 +272,34 @@ function formatEmailBrief(articles: AnalyzedArticle[]): string {
   return html;
 }
 
-async function processAndSendBrief() {
-  try {
-    console.log('🚀 Starting daily brief...');
-    const articles = await fetchRecentArticles();
+async function processAndSendBrief(): Promise<void> {
+  console.log('🚀 Starting daily brief...');
 
-    if (articles.length === 0) {
-      console.log('⚠️ No articles found in any feed');
-      return;
-    }
+  const articles = await fetchRecentArticles();
 
-    const analyzed = await analyzeWithClaude(articles);
-    console.log(`🤖 ${analyzed.length} articles selected`);
-
-    if (analyzed.length === 0) {
-      console.log('⚠️ No relevant articles found by Claude');
-      return;
-    }
-
-    const emailHtml = formatEmailBrief(analyzed);
-
-    await resend.emails.send({
-      from: 'AI Analyst <onboarding@resend.dev>',
-      to: CONFIG.recipientEmail,
-      subject: `🤖 AI Governance Brief — ${analyzed.length} items (${new Date().toLocaleDateString('nl-NL')})`,
-      html: emailHtml,
-    });
-
-    console.log('✅ Email sent successfully');
-  } catch (error) {
-    console.error('❌ Error in processAndSendBrief:', error);
+  if (articles.length === 0) {
+    console.log('⚠️ No articles found in any feed');
+    return;
   }
+
+  const analyzed = await analyzeWithClaude(articles);
+  console.log(`🤖 ${analyzed.length} articles selected`);
+
+  if (analyzed.length === 0) {
+    console.log('⚠️ No relevant articles found by Claude');
+    return;
+  }
+
+  const emailHtml = formatEmailBrief(analyzed);
+
+  await resend.emails.send({
+    from: 'AI Analyst <onboarding@resend.dev>',
+    to: CONFIG.recipientEmail,
+    subject: `🤖 AI Governance Brief — ${analyzed.length} items (${new Date().toLocaleDateString('nl-NL')})`,
+    html: emailHtml,
+  });
+
+  console.log('✅ Email sent successfully');
 }
 
 export async function POST(request: Request) {
@@ -340,13 +308,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  await processAndSendBrief(); // terug naar await
-
-  return NextResponse.json({ status: 'done', message: 'Brief sent' }, { status: 200 });
-}
-
-  // Fire and forget — returns 200 immediately, processing continues in background
-  processAndSendBrief();
-
-  return NextResponse.json({ status: 'started', message: 'Brief generation started' }, { status: 200 });
+  try {
+    await processAndSendBrief();
+    return NextResponse.json({ status: 'done', message: 'Brief sent successfully' }, { status: 200 });
+  } catch (error) {
+    console.error('❌ Error:', error);
+    return NextResponse.json({ error: 'Failed', details: String(error) }, { status: 500 });
+  }
 }
