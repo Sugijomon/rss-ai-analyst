@@ -132,6 +132,7 @@ export async function POST(
       name: process.env.BREVO_SENDER_NAME || 'Digidactics',
       email: process.env.BREVO_SENDER_EMAIL,
     },
+    name: `AI Governance Update #${issue.issue_number}`,
     subject: issue.subject,
     htmlContent,
     listIds: [parseInt(process.env.BREVO_LIST_ID || '1')],
