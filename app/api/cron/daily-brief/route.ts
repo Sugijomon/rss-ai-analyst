@@ -2,7 +2,12 @@ import { NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import Parser from 'rss-parser';
 import { Resend } from 'resend';
+import { createClient } from '@supabase/supabase-js';
 
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_KEY!
+);
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
@@ -271,7 +276,28 @@ function formatEmailBrief(articles: AnalyzedArticle[]): string {
 
   return html;
 }
+async function saveArticlesToSupabase(articles: AnalyzedArticle[]): Promise<void> {
+  const rows = articles.map(a => ({
+    title: a.title,
+    url: a.url,
+    score: a.score,
+    summary: a.summary,
+    why_matters: a.whyMatters,
+    tags: a.tags,
+    opportunity: a.opportunity || null,
+    run_date: new Date().toISOString().split('T')[0],
+  }));
 
+  const { error } = await supabase
+    .from('articles')
+    .upsert(rows, { onConflict: 'url,run_date' });
+
+  if (error) {
+    console.error('❌ Supabase save error:', error);
+  } else {
+    console.log(`✅ ${rows.length} articles saved to Supabase`);
+  }
+}
 async function processAndSendBrief(): Promise<void> {
   console.log('🚀 Starting daily brief...');
 
@@ -284,6 +310,8 @@ async function processAndSendBrief(): Promise<void> {
 
   const analyzed = await analyzeWithClaude(articles);
   console.log(`🤖 ${analyzed.length} articles selected`);
+
+  await saveArticlesToSupabase(analyzed); // ← hier, ná analyzed
 
   if (analyzed.length === 0) {
     console.log('⚠️ No relevant articles found by Claude');
@@ -300,6 +328,7 @@ async function processAndSendBrief(): Promise<void> {
   });
 
   console.log('✅ Email sent successfully');
+
 }
 
 export async function POST(request: Request) {
