@@ -4,52 +4,93 @@ import Parser from 'rss-parser';
 import { Resend } from 'resend';
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_KEY!
-);
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const parser = new Parser();
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_KEY!
+);
 
-const RSS_FEEDS = [
+// ─── RSS FEEDS ────────────────────────────────────────────────────────────────
+// RAI (RouteAI Intelligence) feeds
+const RSS_FEEDS_RAI = [
+  // AI governance & compliance jobs
   'https://www.google.com/alerts/feeds/09449303513221250695/712363126844262138',
-  'https://www.google.com/alerts/feeds/09449303513221250695/8360176497618448162',
   'https://www.google.com/alerts/feeds/09449303513221250695/8360176497618447048',
-  'https://www.google.com/alerts/feeds/09449303513221250695/16104860397407571115',
   'https://www.google.com/alerts/feeds/09449303513221250695/712363126844260895',
-  'https://www.google.com/alerts/feeds/09449303513221250695/10529135105258354989',
-  'https://www.google.com/alerts/feeds/09449303513221250695/10002060156204656018',
-  'https://www.google.com/alerts/feeds/09449303513221250695/17057346079060550580',
-  'https://www.google.com/alerts/feeds/09449303513221250695/18323230671601558587',
-  'https://www.google.com/alerts/feeds/09449303513221250695/8058027391759189925',
-  'https://www.google.com/alerts/feeds/09449303513221250695/1576620731540475628',
-  'https://www.google.com/alerts/feeds/09449303513221250695/8506129854880045759',
-  'https://www.google.com/alerts/feeds/09449303513221250695/10002060156204655808',
-  'https://www.google.com/alerts/feeds/09449303513221250695/451554340955659707',
-  'https://www.google.com/alerts/feeds/09449303513221250695/9227181759097594092',
-  'https://www.google.com/alerts/feeds/09449303513221250695/13385062984594143224',
-  'https://www.google.com/alerts/feeds/09449303513221250695/7124011456707508388',
-  'https://www.google.com/alerts/feeds/09449303513221250695/2164771014014474126',
-  'https://www.google.com/alerts/feeds/09449303513221250695/3370223869929194536',
+  // EU AI Act & regulatory
   'https://www.google.com/alerts/feeds/09449303513221250695/14759970723841580188',
+  'https://www.google.com/alerts/feeds/09449303513221250695/3370223869929194536',
+  'https://www.google.com/alerts/feeds/09449303513221250695/9227181759097594092',
+  'https://www.google.com/alerts/feeds/09449303513221250695/10002060156204655808',
+  'https://www.google.com/alerts/feeds/09449303513221250695/17378552453676393076',
+  // AI governance & compliance general
+  'https://www.google.com/alerts/feeds/09449303513221250695/10529135105258354989',
+  'https://www.google.com/alerts/feeds/09449303513221250695/16104860397407571115',
+  'https://www.google.com/alerts/feeds/09449303513221250695/7124011456707508388',
+  'https://www.google.com/alerts/feeds/09449303513221250695/10002060156204656018',
+  'https://www.google.com/alerts/feeds/09449303513221250695/13385062984594143224',
+  'https://www.google.com/alerts/feeds/09449303513221250695/2164771014014474126',
+  'https://www.google.com/alerts/feeds/09449303513221250695/451554340955659707',
+  // NL-specific
+  'https://www.google.com/alerts/feeds/09449303513221250695/8058027391759189925',
+  'https://www.google.com/alerts/feeds/09449303513221250695/8506129854880045759',
+  'https://www.google.com/alerts/feeds/09449303513221250695/1576620731540475628',
+  // Shadow AI NL
+  'https://www.google.com/alerts/feeds/09449303513221250695/11046596549212494694',
+  // Direct feeds
   'https://digital-strategy.ec.europa.eu/en/rss.xml',
   'https://www.nist.gov/news-events/news/rss.xml',
   'https://artificialintelligence-news.com/feed/',
   'https://www.technologyreview.com/feed/',
 ];
 
+// AISA (AI Skills Accelerator) feeds
+const RSS_FEEDS_AISA = [
+  // AI literacy & training NL
+  'https://www.google.com/alerts/feeds/09449303513221250695/11398596379508912216',
+  'https://www.google.com/alerts/feeds/09449303513221250695/3751838535575008662',
+  'https://www.google.com/alerts/feeds/09449303513221250695/13822444391883320846',
+  'https://www.google.com/alerts/feeds/09449303513221250695/11628233551391557605',
+  // AI skills & workforce EN
+  'https://www.google.com/alerts/feeds/09449303513221250695/9854549709752547786',
+  'https://www.google.com/alerts/feeds/09449303513221250695/17215868415462242323',
+  // RouteAI SME & DPO channel
+  'https://www.google.com/alerts/feeds/09449303513221250695/3010114955718549497',
+  'https://www.google.com/alerts/feeds/09449303513221250695/13053141497936131359',
+  // ISO 42001/42005
+  'https://www.google.com/alerts/feeds/09449303513221250695/14220739381911567576',
+  'https://www.google.com/alerts/feeds/09449303513221250695/14220739381911565544',
+  'https://www.google.com/alerts/feeds/09449303513221250695/14171728769092608143',
+  // NL overheid & handhaving
+  'https://www.google.com/alerts/feeds/09449303513221250695/10756906360246997719',
+  'https://www.google.com/alerts/feeds/09449303513221250695/10756906360247000062',
+  'https://www.google.com/alerts/feeds/09449303513221250695/11006387725598065897',
+  // EU enforcement & national implementation
+  'https://www.google.com/alerts/feeds/09449303513221250695/12740235320510231143',
+  'https://www.google.com/alerts/feeds/09449303513221250695/10340594049990774976',
+  // Agentic AI & future
+  'https://www.google.com/alerts/feeds/09449303513221250695/1685465714473872504',
+  // MKB NL (vervanging)
+  'https://www.google.com/alerts/feeds/09449303513221250695/831771200614974644',
+];
+
+const RSS_FEEDS = [...RSS_FEEDS_RAI, ...RSS_FEEDS_AISA];
+
+// ─── CONFIG ───────────────────────────────────────────────────────────────────
 const CONFIG = {
   maxArticlesPerFeed: 3,
-  hoursLookback: 48,
+  hoursLookback: 36,
   minRelevanceScore: 5,
   maxArticlesInBrief: 15,
   recipientEmail: process.env.RECIPIENT_EMAIL || '',
 };
 
+// ─── INTERFACES ───────────────────────────────────────────────────────────────
 interface Article {
   title: string;
   link: string;
@@ -65,8 +106,10 @@ interface AnalyzedArticle {
   tags: string[];
   url: string;
   opportunity?: string;
+  aisaOpportunity?: string;
 }
 
+// ─── FETCH FEEDS ──────────────────────────────────────────────────────────────
 async function fetchRecentArticles(): Promise<Article[]> {
   const cutoffDate = new Date(Date.now() - CONFIG.hoursLookback * 60 * 60 * 1000);
   const allArticles: Article[] = [];
@@ -88,7 +131,7 @@ async function fetchRecentArticles(): Promise<Article[]> {
           content: item.content || item.contentSnippet || item.summary || '',
         }))
         .filter(item => {
-          if (seenLinks.has(item.link)) return false;
+          if (!item.link || seenLinks.has(item.link)) return false;
           seenLinks.add(item.link);
           return true;
         });
@@ -98,7 +141,7 @@ async function fetchRecentArticles(): Promise<Article[]> {
         console.log(`✓ Feed ${RSS_FEEDS.indexOf(feedUrl) + 1}: ${recentItems.length} articles`);
       }
     } catch (error) {
-      console.error(`✗ Error fetching feed ${RSS_FEEDS.indexOf(feedUrl) + 1}:`, error);
+      console.error(`✗ Error fetching feed ${RSS_FEEDS.indexOf(feedUrl) + 1} (${feedUrl}):`, error);
     }
   }
 
@@ -106,6 +149,7 @@ async function fetchRecentArticles(): Promise<Article[]> {
   return allArticles;
 }
 
+// ─── ANALYZE WITH CLAUDE ──────────────────────────────────────────────────────
 async function analyzeWithClaude(articles: Article[]): Promise<AnalyzedArticle[]> {
   const analyzed: AnalyzedArticle[] = [];
   const batchSize = 5;
@@ -113,62 +157,71 @@ async function analyzeWithClaude(articles: Article[]): Promise<AnalyzedArticle[]
   for (let i = 0; i < articles.length; i += batchSize) {
     const batch = articles.slice(i, i + batchSize);
 
-    const prompt = `You are my AI Governance Intelligence Analyst for RouteAI, a platform helping Dutch SMEs comply with the EU AI Act.
+    const prompt = `Je bent mijn AI Governance & Skills Intelligence Analist voor Digidactics, een Nederlands adviesbureau met twee producten:
+- RouteAI: AI governance platform dat Nederlandse MKB-bedrijven helpt te voldoen aan de EU AI Act
+- AISA: AI Skills Accelerator — cohorttraining die medewerkers van Nederlandse MKB-bedrijven praktische AI-vaardigheden bijbrengt
 
-FOCUS ON:
-- EU AI Act implementation, deadlines, enforcement updates
-- ISO/IEC 42001 & 42005 certification developments
+BELANGRIJK: Schrijf ALLE output altijd in het Nederlands, ongeacht de taal van het bronartikel.
+
+FOCUS OP:
+- EU AI Act implementatie, deadlines, handhavingsupdates
+- ISO/IEC 42001 & 42005 certificeringsontwikkelingen
 - NIST AI RMF updates
-- AI risk governance frameworks
-- Dutch/European SME AI adoption and compliance
-- AI literacy and training requirements
-- Regulatory enforcement actions or fines
-- EDIH network developments in Netherlands
-- AI governance job market signals
+- AI risico governance frameworks
+- Nederlandse/Europese MKB AI-adoptie en compliance
+- AI-geletterdheid, bijscholing en trainingsbehoeften voor medewerkers
+- Handhavingsacties of boetes door toezichthouders
+- EDIH-netwerkontwikkelingen in Nederland
+- Signalen op de AI governance arbeidsmarkt
+- Shadow AI en beheer van AI-tools op de werkplek
+- DPO- en juridisch perspectief op AI Act-compliance
 
-PRIORITIZE articles about:
-- Dutch or European AI regulation
-- SME/MKB AI compliance challenges
-- AI governance tools or frameworks
-- ISO 42001 certification guidance
-- Practical AI implementation for non-technical organizations
-- Shadow IT and AI tool governance in workplaces
+PRIORITEER artikelen over:
+- Nederlandse of Europese AI-regelgeving
+- MKB AI-compliance uitdagingen
+- AI governance tools of frameworks
+- ISO 42001 certificeringsgids
+- AI-geletterdheid en bijscholing van medewerkers
+- Praktische AI-implementatie voor niet-technische organisaties
+- Shadow AI op de werkvloer
+- DPO/juridisch kanaalsignalen
 
-IGNORE articles about:
-- US-only policy (unless directly relevant to EU)
-- General AI product launches without governance angle
-- Hype, marketing, press releases
-- Shallow opinion without substance
-- Consumer AI apps (ChatGPT features, etc.)
-- AI art, entertainment, gaming
+NEGEER artikelen over:
+- Uitsluitend Amerikaans beleid (tenzij direct relevant voor EU)
+- Algemene AI-productlanceringen zonder governance-hoek
+- Hype, marketing, persberichten
+- Oppervlakkige meningen zonder inhoud
+- Consumenten-AI apps (ChatGPT functies, etc.)
+- AI kunst, entertainment, gaming
 
-For each article:
-1. Score relevance (1-10) for an AI governance consultant serving Dutch SMEs
-2. If score < ${CONFIG.minRelevanceScore}, output: {"score": X, "skip": true}
-3. Otherwise produce JSON:
+Voor elk artikel:
+1. Beoordeel relevantie (1-10) voor een AI governance consultant die Nederlandse MKB-bedrijven bedient
+2. Als score < ${CONFIG.minRelevanceScore}, geef terug: {"score": X, "skip": true}
+3. Geef anders deze JSON terug (ALLES in het Nederlands):
 {
   "score": X,
-  "title": "article title",
-  "summary": ["bullet 1 (max 18 words)", "bullet 2 (max 18 words)", "bullet 3 (max 18 words)"],
-  "whyMatters": "Why this matters for AI governance practice (one sentence)",
-  "tags": ["Regulatory or Market or Jobs or Technology or Risk"],
-  "url": "article url",
-  "opportunity": "Specific opportunity for RouteAI product or positioning (only if genuinely applicable)"
+  "title": "Nederlandse vertaling van de artikeltitel",
+  "summary": ["punt 1 (max 18 woorden)", "punt 2 (max 18 woorden)", "punt 3 (max 18 woorden)"],
+  "whyMatters": "Waarom dit relevant is voor AI governance of AI-vaardigheidspraktijk (één zin)",
+  "tags": ["één of meer van: Regelgeving, Markt, Vacatures, Technologie, Risico, Vaardigheden, Handhaving"],
+  "url": "artikel url",
+  "opportunity": "Concrete kans voor RouteAI product of positionering (alleen indien echt van toepassing, anders weglaten)",
+  "aisaOpportunity": "Concrete kans voor AISA trainingsprogramma of positionering (alleen indien echt van toepassing, anders weglaten)"
 }
 
-Articles:
+Artikelen:
 ${batch.map((a, idx) => `
-Article ${idx + 1}:
-Title: ${a.title}
+Artikel ${idx + 1}:
+Titel: ${a.title}
 URL: ${a.link}
-Content: ${a.content}
+Inhoud: ${a.content}
 `).join('\n---\n')}
 
-Return a JSON array with one result per article.`;
+Geef een JSON-array terug met één resultaat per artikel.`;
 
     try {
       const message = await anthropic.messages.create({
-        model: 'claude-sonnet-4-5-20250929',
+        model: 'claude-sonnet-4-6',
         max_tokens: 4000,
         messages: [{ role: 'user', content: prompt }]
       });
@@ -195,6 +248,29 @@ Return a JSON array with one result per article.`;
     .slice(0, CONFIG.maxArticlesInBrief);
 }
 
+// ─── SAVE TO SUPABASE ─────────────────────────────────────────────────────────
+async function saveArticlesToSupabase(articles: AnalyzedArticle[]): Promise<void> {
+  const rows = articles.map(a => ({
+    title: a.title,
+    url: a.url,
+    score: a.score,
+    summary: a.summary,
+    why_matters: a.whyMatters,
+    tags: a.tags,
+    opportunity: a.opportunity || null,
+    aisa_opportunity: a.aisaOpportunity || null,
+    run_date: new Date().toISOString().split('T')[0],
+  }));
+
+  const { error } = await supabase
+    .from('articles')
+    .upsert(rows, { onConflict: 'url,run_date' });
+
+  if (error) console.error('❌ Supabase save error:', error);
+  else console.log(`✅ ${rows.length} articles saved to Supabase`);
+}
+
+// ─── FORMAT EMAIL ─────────────────────────────────────────────────────────────
 function formatEmailBrief(articles: AnalyzedArticle[]): string {
   const date = new Date().toLocaleDateString('nl-NL', {
     weekday: 'long',
@@ -203,45 +279,69 @@ function formatEmailBrief(articles: AnalyzedArticle[]): string {
     day: 'numeric'
   });
 
-  const regulatory = articles.filter(a => a.tags.includes('Regulatory'));
-  const market = articles.filter(a => a.tags.includes('Market'));
-  const jobs = articles.filter(a => a.tags.includes('Jobs'));
-  const opportunities = articles.filter(a => a.opportunity);
+  const regelgeving  = articles.filter(a => a.tags.includes('Regelgeving'));
+  const handhaving   = articles.filter(a => a.tags.includes('Handhaving'));
+  const vaardigheden = articles.filter(a => a.tags.includes('Vaardigheden'));
+  const markt        = articles.filter(a => a.tags.includes('Markt'));
+  const vacatures    = articles.filter(a => a.tags.includes('Vacatures'));
+  const routeAIOpp   = articles.filter(a => a.opportunity);
+  const aisaOpp      = articles.filter(a => a.aisaOpportunity);
 
   let html = `
     <div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto; padding: 20px;">
     <h1 style="color: #1a202c; border-bottom: 2px solid #4299e1; padding-bottom: 10px;">
-      🤖 Daily AI Governance Intelligence Brief
+      🤖 Dagelijkse AI Governance Intelligence Brief
     </h1>
-    <p style="color: #718096;"><strong>${date}</strong> · ${articles.length} relevant items · ${RSS_FEEDS.length} sources monitored</p>
+    <p style="color: #718096;">
+      <strong>${date}</strong> · ${articles.length} relevante artikelen · ${RSS_FEEDS.length} bronnen gemonitord
+      (${RSS_FEEDS_RAI.length} RouteAI · ${RSS_FEEDS_AISA.length} AISA)
+    </p>
     <hr style="border: 1px solid #e2e8f0;">
   `;
 
-  if (regulatory.length > 0) {
-    html += `<h2 style="color: #2d3748;">🏛️ Regulatory Signals</h2><ul>`;
-    regulatory.forEach(a => html += `<li><a href="${a.url}" style="color: #4299e1;">${a.title}</a></li>`);
+  if (regelgeving.length > 0) {
+    html += `<h2 style="color: #2d3748;">🏛️ Regelgevingssignalen</h2><ul>`;
+    regelgeving.forEach(a => html += `<li><a href="${a.url}" style="color: #4299e1;">${a.title}</a></li>`);
     html += `</ul>`;
   }
 
-  if (market.length > 0) {
-    html += `<h2 style="color: #2d3748;">📊 Market Signals</h2><ul>`;
-    market.forEach(a => html += `<li><a href="${a.url}" style="color: #4299e1;">${a.title}</a></li>`);
+  if (handhaving.length > 0) {
+    html += `<h2 style="color: #2d3748;">⚖️ Handhavingssignalen</h2><ul>`;
+    handhaving.forEach(a => html += `<li><a href="${a.url}" style="color: #4299e1;">${a.title}</a></li>`);
     html += `</ul>`;
   }
 
-  if (jobs.length > 0) {
-    html += `<h2 style="color: #2d3748;">💼 Jobs Signals</h2><ul>`;
-    jobs.forEach(a => html += `<li><a href="${a.url}" style="color: #4299e1;">${a.title}</a></li>`);
+  if (vaardigheden.length > 0) {
+    html += `<h2 style="color: #2d3748;">🎓 AI Vaardigheden & Geletterdheid</h2><ul>`;
+    vaardigheden.forEach(a => html += `<li><a href="${a.url}" style="color: #4299e1;">${a.title}</a></li>`);
     html += `</ul>`;
   }
 
-  if (opportunities.length > 0) {
-    html += `<h2 style="color: #2d3748;">💡 RouteAI Opportunities</h2><ul>`;
-    opportunities.forEach(a => html += `<li>${a.opportunity}</li>`);
+  if (markt.length > 0) {
+    html += `<h2 style="color: #2d3748;">📊 Marktsignalen</h2><ul>`;
+    markt.forEach(a => html += `<li><a href="${a.url}" style="color: #4299e1;">${a.title}</a></li>`);
     html += `</ul>`;
   }
 
-  html += `<hr style="border: 1px solid #e2e8f0;"><h2 style="color: #2d3748;">📰 Selected Articles</h2>`;
+  if (vacatures.length > 0) {
+    html += `<h2 style="color: #2d3748;">💼 Vacaturesignalen</h2><ul>`;
+    vacatures.forEach(a => html += `<li><a href="${a.url}" style="color: #4299e1;">${a.title}</a></li>`);
+    html += `</ul>`;
+  }
+
+  if (routeAIOpp.length > 0) {
+    html += `<h2 style="color: #2d3748;">💡 RouteAI Kansen</h2><ul>`;
+    routeAIOpp.forEach(a => html += `<li>${a.opportunity}</li>`);
+    html += `</ul>`;
+  }
+
+  if (aisaOpp.length > 0) {
+    html += `<h2 style="color: #2d3748;">🎓 AISA Kansen</h2><ul>`;
+    aisaOpp.forEach(a => html += `<li>${a.aisaOpportunity}</li>`);
+    html += `</ul>`;
+  }
+
+  html += `<hr style="border: 1px solid #e2e8f0;"><h2 style="color: #2d3748;">📰 Geselecteerde Artikelen</h2>`;
 
   articles.forEach((article, idx) => {
     html += `
@@ -254,14 +354,18 @@ function formatEmailBrief(articles: AnalyzedArticle[]): string {
           ${article.summary.map(s => `<li style="margin-bottom: 4px;">${s}</li>`).join('')}
         </ul>
         <p style="margin: 0 0 5px 0; color: #2d3748;">
-          <strong>Why this matters:</strong> ${article.whyMatters}
+          <strong>Waarom relevant:</strong> ${article.whyMatters}
         </p>
         ${article.opportunity ? `
           <p style="margin: 8px 0; padding: 8px; background: #ebf8ff; border-radius: 4px; color: #2b6cb0;">
             <strong>💡 RouteAI:</strong> ${article.opportunity}
           </p>` : ''}
+        ${article.aisaOpportunity ? `
+          <p style="margin: 8px 0; padding: 8px; background: #f0fff4; border-radius: 4px; color: #276749;">
+            <strong>🎓 AISA:</strong> ${article.aisaOpportunity}
+          </p>` : ''}
         <p style="margin: 10px 0 0 0;">
-          <a href="${article.url}" style="color: #4299e1;">Read full article →</a>
+          <a href="${article.url}" style="color: #4299e1;">Lees het volledige artikel →</a>
         </p>
       </div>
     `;
@@ -270,34 +374,14 @@ function formatEmailBrief(articles: AnalyzedArticle[]): string {
   html += `
     <hr style="border: 1px solid #e2e8f0; margin-top: 30px;">
     <p style="color: #a0aec0; font-size: 12px;">
-      RouteAI Intelligence Brief · Powered by Claude · ${RSS_FEEDS.length} sources monitored
+      Digidactics Intelligence Brief · Powered by Claude · ${RSS_FEEDS.length} bronnen gemonitord
     </p>
     </div>`;
 
   return html;
 }
-async function saveArticlesToSupabase(articles: AnalyzedArticle[]): Promise<void> {
-  const rows = articles.map(a => ({
-    title: a.title,
-    url: a.url,
-    score: a.score,
-    summary: a.summary,
-    why_matters: a.whyMatters,
-    tags: a.tags,
-    opportunity: a.opportunity || null,
-    run_date: new Date().toISOString().split('T')[0],
-  }));
 
-  const { error } = await supabase
-    .from('articles')
-    .upsert(rows, { onConflict: 'url,run_date' });
-
-  if (error) {
-    console.error('❌ Supabase save error:', error);
-  } else {
-    console.log(`✅ ${rows.length} articles saved to Supabase`);
-  }
-}
+// ─── MAIN PROCESS ─────────────────────────────────────────────────────────────
 async function processAndSendBrief(): Promise<void> {
   console.log('🚀 Starting daily brief...');
 
@@ -311,32 +395,31 @@ async function processAndSendBrief(): Promise<void> {
   const analyzed = await analyzeWithClaude(articles);
   console.log(`🤖 ${analyzed.length} articles selected`);
 
-  await saveArticlesToSupabase(analyzed); // ← hier, ná analyzed
-
   if (analyzed.length === 0) {
     console.log('⚠️ No relevant articles found by Claude');
     return;
   }
+
+  await saveArticlesToSupabase(analyzed);
 
   const emailHtml = formatEmailBrief(analyzed);
 
   await resend.emails.send({
     from: 'AI Analyst <onboarding@resend.dev>',
     to: CONFIG.recipientEmail,
-    subject: `🤖 AI Governance Brief — ${analyzed.length} items (${new Date().toLocaleDateString('nl-NL')})`,
+    subject: `🤖 AI Governance Brief — ${analyzed.length} artikelen (${new Date().toLocaleDateString('nl-NL')})`,
     html: emailHtml,
   });
 
   console.log('✅ Email sent successfully');
-
 }
 
-export async function POST(request: Request) {
+// ─── HANDLERS ─────────────────────────────────────────────────────────────────
+export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization');
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-
   try {
     await processAndSendBrief();
     return NextResponse.json({ status: 'done', message: 'Brief sent successfully' }, { status: 200 });
@@ -345,15 +428,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Failed', details: String(error) }, { status: 500 });
   }
 }
-export async function GET(request: Request) {
+
+export async function POST(request: Request) {
   const authHeader = request.headers.get('authorization');
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-
   try {
     await processAndSendBrief();
-    return NextResponse.json({ status: 'done' }, { status: 200 });
+    return NextResponse.json({ status: 'done', message: 'Brief sent successfully' }, { status: 200 });
   } catch (error) {
     console.error('❌ Error:', error);
     return NextResponse.json({ error: 'Failed', details: String(error) }, { status: 500 });
