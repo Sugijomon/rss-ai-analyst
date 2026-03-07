@@ -241,7 +241,7 @@ async function saveNewsletterIssue(
       period_start: periodStart.toISOString().split('T')[0],
       period_end: periodEnd.toISOString().split('T')[0],
       status: 'draft',
-      subject: `AI Governance Update #${issueNumber} — ${periodEnd.toLocaleDateString('nl-NL', { month: 'long', year: 'numeric' })}`,
+      subject: `AI Governance Update #${issueNumber} - ${periodEnd.toLocaleDateString('nl-NL', { month: 'long', year: 'numeric' })}`,
       intro_text: introText,
     })
     .select('id')
