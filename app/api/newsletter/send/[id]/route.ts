@@ -33,11 +33,9 @@ function buildEmailHtml(issue: any, articles: any[]): string {
           ${periodStart} – ${periodEnd} · Digidactics
         </p>
       </div>
-
       <p style="font-size: 15px; line-height: 1.7; color: #2d3748; margin-bottom: 28px;">
         ${issue.intro_text}
       </p>
-
       <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
   `;
 
@@ -88,29 +86,29 @@ function buildEmailHtml(issue: any, articles: any[]): string {
 
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   if (!checkAuth(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  // Haal editie op
+  const { id } = await params;
+
   const { data: issue, error: issueError } = await supabase
     .from('newsletter_issues')
     .select('*')
-    .eq('id', params.id)
+    .eq('id', id)
     .single();
 
   if (issueError || !issue) {
     return NextResponse.json({ error: 'Editie niet gevonden' }, { status: 404 });
   }
 
-  // Haal geselecteerde artikelen op
   const { data: naRows, error: naError } = await supabase
     .from('newsletter_articles')
     .select(`
       id, category, category_summary, display_order, included,
       articles ( title, url, score, why_matters )
     `)
-    .eq('issue_id', params.id)
+    .eq('issue_id', id)
     .eq('included', true);
 
   if (naError) return NextResponse.json({ error: naError.message }, { status: 500 });
@@ -129,7 +127,6 @@ export async function POST(
 
   const htmlContent = buildEmailHtml(issue, articles);
 
-  // Verstuur via Brevo
   const brevoPayload = {
     sender: {
       name: process.env.BREVO_SENDER_NAME || 'Digidactics',
@@ -138,7 +135,6 @@ export async function POST(
     subject: issue.subject,
     htmlContent,
     listIds: [parseInt(process.env.BREVO_LIST_ID || '1')],
-    scheduledAt: null,
   };
 
   const brevoRes = await fetch('https://api.brevo.com/v3/emailCampaigns', {
@@ -158,17 +154,15 @@ export async function POST(
 
   const brevoData = await brevoRes.json();
 
-  // Stuur campagne direct
   await fetch(`https://api.brevo.com/v3/emailCampaigns/${brevoData.id}/sendNow`, {
     method: 'POST',
     headers: { 'api-key': process.env.BREVO_API_KEY || '' },
   });
 
-  // Markeer als verzonden in Supabase
   await supabase
     .from('newsletter_issues')
     .update({ status: 'sent', sent_at: new Date().toISOString() })
-    .eq('id', params.id);
+    .eq('id', id);
 
   return NextResponse.json({ ok: true, campaignId: brevoData.id });
 }

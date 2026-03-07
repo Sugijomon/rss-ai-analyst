@@ -12,21 +12,20 @@ function checkAuth(request: Request) {
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   if (!checkAuth(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+  const { id } = await params;
   const { subject, intro_text, status, articles } = await request.json();
 
-  // Update editie
   const { error: issueError } = await supabase
     .from('newsletter_issues')
     .update({ subject, intro_text, status })
-    .eq('id', params.id);
+    .eq('id', id);
 
   if (issueError) return NextResponse.json({ error: issueError.message }, { status: 500 });
 
-  // Update artikel selecties
   if (articles?.length) {
     for (const article of articles) {
       await supabase
