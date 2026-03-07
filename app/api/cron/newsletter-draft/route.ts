@@ -202,12 +202,16 @@ async function generateIntroText(categoryGroups: CategoryGroup[], periodStart: D
 Periode: ${startStr} – ${endStr}
 Meest opvallende onderwerpen deze periode: ${topArticles}
 
-Begin niet met "In deze editie" of "Beste lezer" of "wij".
-Toon: betrokken, direct en praktisch, vanuit het perspectief van een drukke MKB-ondernemer.
-Schrijf vanuit de motivatie inzicht te verstrekken en handelingsperspectief, zonder te verkopen. Geen bullshit, geen jargon.
-Schrijf in het Nederlands.
-Schrijf in een beschouwende/informatieve stijl vanuit Digidactics.
-Begin met de meest opvallende ontwikkeling van de periode.`;
+Toon: informatief en beschouwend, journalistieke vakbladstijl. 
+De schrijver blijft op de achtergrond — geen 'wij', geen 'jij', geen 'u'.
+Schrijf in de derde persoon of onpersoonlijk waar mogelijk.
+Gebruik af en toe een metafoor, vergelijking of praktijkvoorbeeld om abstracte 
+regelgeving concreet te maken. Licht uitdagend van toon — de lezer wordt geprikkeld 
+om verder na te denken, niet gerustgesteld.
+Vermijd: jargon, consultantstaal, opsommingen zonder context, open deuren.
+Vermijd: "In deze editie", "Zoals bekend", "Het is duidelijk dat".
+Begin de intro met de meest opvallende ontwikkeling van de periode — alsof het 
+eerste zinnen van een krantenartikel zijn.;
 
   try {
     const message = await anthropic.messages.create({
