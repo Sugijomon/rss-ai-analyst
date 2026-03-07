@@ -345,3 +345,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Failed', details: String(error) }, { status: 500 });
   }
 }
+export async function GET(request: Request) {
+  const authHeader = request.headers.get('authorization');
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    await processAndSendBrief();
+    return NextResponse.json({ status: 'done' }, { status: 200 });
+  } catch (error) {
+    console.error('❌ Error:', error);
+    return NextResponse.json({ error: 'Failed', details: String(error) }, { status: 500 });
+  }
+}
