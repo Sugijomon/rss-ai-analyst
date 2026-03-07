@@ -3,7 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@supabase/supabase-js';
 
 const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY_NEWSLETTER,
+  apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
 const supabase = createClient(
@@ -55,7 +55,7 @@ interface CategoryGroup {
   articles: CategorizedArticle[];
 }
 
-// ─── CHECK IF NEW ISSUE NEEDED ────────────────────────────────────────────────
+// CHECK IF NEW ISSUE NEEDED
 async function shouldCreateNewIssue(): Promise<{ create: boolean; issueNumber: number; periodStart: Date }> {
   const { data: lastIssue } = await supabase
     .from('newsletter_issues')
@@ -65,15 +65,18 @@ async function shouldCreateNewIssue(): Promise<{ create: boolean; issueNumber: n
     .single();
 
   if (!lastIssue) {
-    // Eerste editie
-    return { create: true, issueNumber: 1, periodStart: new Date(Date.now() - ISSUE_INTERVAL_DAYS * 24 * 60 * 60 * 1000) };
+    return {
+      create: true,
+      issueNumber: 1,
+      periodStart: new Date(Date.now() - ISSUE_INTERVAL_DAYS * 24 * 60 * 60 * 1000),
+    };
   }
 
   const lastCreated = new Date(lastIssue.created_at);
   const daysSinceLast = (Date.now() - lastCreated.getTime()) / (1000 * 60 * 60 * 24);
 
   if (daysSinceLast < ISSUE_INTERVAL_DAYS) {
-    console.log(`⏭️ Laatste editie was ${Math.round(daysSinceLast)} dagen geleden — nog geen nieuwe editie nodig`);
+    console.log('Laatste editie was ' + Math.round(daysSinceLast) + ' dagen geleden - nog geen nieuwe editie nodig');
     return { create: false, issueNumber: 0, periodStart: new Date() };
   }
 
@@ -84,7 +87,7 @@ async function shouldCreateNewIssue(): Promise<{ create: boolean; issueNumber: n
   };
 }
 
-// ─── FETCH ARTICLES FROM SUPABASE ─────────────────────────────────────────────
+// FETCH ARTICLES FROM SUPABASE
 async function fetchArticlesForPeriod(periodStart: Date): Promise<SupabaseArticle[]> {
   const startDate = periodStart.toISOString().split('T')[0];
 
@@ -94,75 +97,86 @@ async function fetchArticlesForPeriod(periodStart: Date): Promise<SupabaseArticl
     .gte('run_date', startDate)
     .gte('score', MIN_SCORE)
     .order('score', { ascending: false })
-    .limit(MAX_TOTAL_ARTICLES * 3); // ruim ophalen, Claude selecteert de beste
+    .limit(MAX_TOTAL_ARTICLES * 3);
 
   if (error) {
-    console.error('❌ Supabase fetch error:', error);
+    console.error('Supabase fetch error:', error);
     return [];
   }
 
-  console.log(`📚 ${data?.length || 0} artikelen gevonden vanaf ${startDate} met score ≥ ${MIN_SCORE}`);
+  console.log((data?.length || 0) + ' artikelen gevonden vanaf ' + startDate + ' met score >= ' + MIN_SCORE);
   return data || [];
 }
 
-// ─── CATEGORIZE & SUMMARIZE WITH CLAUDE ───────────────────────────────────────
+// CATEGORIZE & SUMMARIZE WITH CLAUDE
 async function categorizeWithClaude(articles: SupabaseArticle[]): Promise<CategoryGroup[]> {
-  const articleList = articles.map((a, idx) => `
-Artikel ${idx + 1}:
-ID: ${a.id}
-Titel: ${a.title}
-URL: ${a.url}
-Score: ${a.score}/10
-Samenvatting: ${a.summary?.join(' | ')}
-Waarom relevant: ${a.why_matters}
-Tags: ${a.tags?.join(', ')}
-${a.opportunity ? `RouteAI kans: ${a.opportunity}` : ''}
-${a.aisa_opportunity ? `AISA kans: ${a.aisa_opportunity}` : ''}
-`).join('\n---\n');
+  const articleList = articles.map((a, idx) => [
+    'Artikel ' + (idx + 1) + ':',
+    'ID: ' + a.id,
+    'Titel: ' + a.title,
+    'URL: ' + a.url,
+    'Score: ' + a.score + '/10',
+    'Samenvatting: ' + (a.summary ? a.summary.join(' | ') : ''),
+    'Waarom relevant: ' + a.why_matters,
+    'Tags: ' + (a.tags ? a.tags.join(', ') : ''),
+    a.opportunity ? 'RouteAI kans: ' + a.opportunity : '',
+    a.aisa_opportunity ? 'AISA kans: ' + a.aisa_opportunity : '',
+  ].filter(Boolean).join('\n')).join('\n---\n');
 
-  const prompt = `Je bent redacteur van een tweewekelijkse AI governance nieuwsbrief voor Nederlandse MKB-professionals.
-De nieuwsbrief is van Digidactics en gericht op beslissers bij MKB-bedrijven die te maken hebben met de EU AI Act.
-Toon: professioneel maar toegankelijk, praktisch, geen jargon.
-
-Je taak:
-1. Verdeel de onderstaande artikelen over de volgende categorieën (kies per artikel de beste categorie):
-   - "Pijnpunten en kansen" — concrete uitdagingen en kansen voor MKB rondom AI
-   - "Nieuws EU AI Act" — updates over de EU AI Act zelf (deadlines, handhaving, guidance)
-   - "Belangrijkste nieuwsfeiten" — algemeen belangrijk AI-nieuws voor MKB
-   - "Internationale lessen" — wat kunnen Nederlandse MKB'ers leren van andere landen?
-   - "Technologische ontwikkelingen" — relevante AI-technologie voor MKB-praktijk
-   - "Governance en compliance" — frameworks, ISO 42001, tools, praktische compliance
-
-2. Selecteer maximaal ${MAX_ARTICLES_PER_CATEGORY} artikelen per categorie (de meest relevante).
-   Laat categorieën leeg als er geen goede artikelen voor zijn.
-
-3. Schrijf per categorie een korte intro-samenvatting van 2-3 zinnen in het Nederlands.
-   Schrijf vanuit het perspectief van een MKB-professional: wat betekent dit voor hun organisatie?
-
-Geef je antwoord als JSON:
-{
-  "categories": [
-    {
-      "category": "naam van categorie",
-      "summary": "2-3 zinnen intro voor deze categorie",
-      "articles": [
-        {
-          "article_id": "uuid van het artikel",
-          "category": "naam van categorie",
-          "title": "titel van artikel",
-          "url": "url van artikel",
-          "score": 8,
-          "why_matters": "waarom relevant"
-        }
-      ]
-    }
-  ]
-}
-
-Artikelen:
-${articleList}
-
-Geef alleen geldige JSON terug, geen uitleg of Markdown.`;
+  const prompt = [
+    'Je bent redacteur van een tweewekelijkse AI governance nieuwsbrief voor Nederlandse MKB-professionals.',
+    'De nieuwsbrief is van Digidactics en gericht op beslissers bij MKB-bedrijven die te maken hebben met de EU AI Act.',
+    '',
+    'SCHRIJFSTIJL:',
+    'Informatief en beschouwend, journalistieke vakbladstijl.',
+    'De schrijver blijft op de achtergrond - geen wij, geen jij, geen u.',
+    'Schrijf in de derde persoon of onpersoonlijk waar mogelijk.',
+    'Gebruik af en toe een metafoor, vergelijking of praktijkvoorbeeld om abstracte regelgeving concreet te maken.',
+    'Licht uitdagend van toon - de lezer wordt geprikkeld om verder na te denken, niet gerustgesteld.',
+    'Vermijd: jargon, consultantstaal, opsommingen zonder context, open deuren.',
+    'Vermijd: "In deze editie", "Zoals bekend", "Het is duidelijk dat".',
+    '',
+    'TAAK:',
+    '1. Verdeel de onderstaande artikelen over de volgende categorieen (kies per artikel de beste categorie):',
+    '   - "Pijnpunten en kansen" - concrete uitdagingen en kansen voor MKB rondom AI',
+    '   - "Nieuws EU AI Act" - updates over de EU AI Act zelf (deadlines, handhaving, guidance)',
+    '   - "Belangrijkste nieuwsfeiten" - algemeen belangrijk AI-nieuws voor MKB',
+    '   - "Internationale lessen" - wat kunnen Nederlandse MKBers leren van andere landen?',
+    '   - "Technologische ontwikkelingen" - relevante AI-technologie voor MKB-praktijk',
+    '   - "Governance en compliance" - frameworks, ISO 42001, tools, praktische compliance',
+    '',
+    '2. Selecteer maximaal ' + MAX_ARTICLES_PER_CATEGORY + ' artikelen per categorie (de meest relevante).',
+    '   Laat categorieen leeg als er geen goede artikelen voor zijn.',
+    '',
+    '3. Schrijf per categorie een intro-samenvatting van 2-3 zinnen in het Nederlands.',
+    '   Begin met de meest opvallende ontwikkeling alsof het de eerste zinnen van een krantenartikel zijn.',
+    '   Gebruik de journalistieke schrijfstijl zoals hierboven omschreven.',
+    '',
+    'Geef je antwoord als JSON:',
+    '{',
+    '  "categories": [',
+    '    {',
+    '      "category": "naam van categorie",',
+    '      "summary": "2-3 zinnen intro voor deze categorie",',
+    '      "articles": [',
+    '        {',
+    '          "article_id": "uuid van het artikel",',
+    '          "category": "naam van categorie",',
+    '          "title": "titel van artikel",',
+    '          "url": "url van artikel",',
+    '          "score": 8,',
+    '          "why_matters": "waarom relevant"',
+    '        }',
+    '      ]',
+    '    }',
+    '  ]',
+    '}',
+    '',
+    'Artikelen:',
+    articleList,
+    '',
+    'Geef alleen geldige JSON terug, geen uitleg of Markdown.',
+  ].join('\n');
 
   try {
     const message = await anthropic.messages.create({
@@ -174,19 +188,19 @@ Geef alleen geldige JSON terug, geen uitleg of Markdown.`;
     const responseText = message.content[0].type === 'text' ? message.content[0].text : '';
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      console.error('❌ Geen geldige JSON in Claude-response');
+      console.error('Geen geldige JSON in Claude-response');
       return [];
     }
 
     const parsed = JSON.parse(jsonMatch[0]);
     return parsed.categories || [];
   } catch (error) {
-    console.error('❌ Claude categorisatie fout:', error);
+    console.error('Claude categorisatie fout:', error);
     return [];
   }
 }
 
-// ─── GENERATE INTRO TEXT ──────────────────────────────────────────────────────
+// GENERATE INTRO TEXT
 async function generateIntroText(categoryGroups: CategoryGroup[], periodStart: Date, periodEnd: Date): Promise<string> {
   const topArticles = categoryGroups
     .flatMap(g => g.articles)
@@ -198,20 +212,20 @@ async function generateIntroText(categoryGroups: CategoryGroup[], periodStart: D
   const startStr = periodStart.toLocaleDateString('nl-NL', { day: 'numeric', month: 'long' });
   const endStr = periodEnd.toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' });
 
-  const prompt = `Schrijf een korte opening (3-4 zinnen) voor een tweewekelijkse AI governance nieuwsbrief voor Nederlandse MKB-professionals.
-Periode: ${startStr} – ${endStr}
-Meest opvallende onderwerpen deze periode: ${topArticles}
-
-Toon: informatief en beschouwend, journalistieke vakbladstijl. 
-De schrijver blijft op de achtergrond — geen 'wij', geen 'jij', geen 'u'.
-Schrijf in de derde persoon of onpersoonlijk waar mogelijk.
-Gebruik af en toe een metafoor, vergelijking of praktijkvoorbeeld om abstracte 
-regelgeving concreet te maken. Licht uitdagend van toon — de lezer wordt geprikkeld 
-om verder na te denken, niet gerustgesteld.
-Vermijd: jargon, consultantstaal, opsommingen zonder context, open deuren.
-Vermijd: "In deze editie", "Zoals bekend", "Het is duidelijk dat".
-Begin de intro met de meest opvallende ontwikkeling van de periode — alsof het 
-eerste zinnen van een krantenartikel zijn.;
+  const prompt = [
+    'Schrijf een opening van 3-4 zinnen voor een tweewekelijkse AI governance nieuwsbrief voor Nederlandse MKB-professionals.',
+    'Periode: ' + startStr + ' - ' + endStr,
+    'Meest opvallende onderwerpen deze periode: ' + topArticles,
+    '',
+    'Schrijfstijl:',
+    'Informatief en beschouwend, journalistieke vakbladtoon.',
+    'Geen wij, geen jij, geen u - schrijf onpersoonlijk of in de derde persoon.',
+    'Begin met de meest opvallende ontwikkeling van de periode - alsof het de eerste zinnen van een krantenartikel zijn.',
+    'Mag een metafoor of vergelijking bevatten om de lading te dekken.',
+    'Licht uitdagend van toon - prikkel de lezer om verder te lezen.',
+    'Vermijd: "In deze editie", "Beste lezer", "Zoals bekend", open deuren.',
+    'Schrijf in het Nederlands.',
+  ].join('\n');
 
   try {
     const message = await anthropic.messages.create({
@@ -225,7 +239,7 @@ eerste zinnen van een krantenartikel zijn.;
   }
 }
 
-// ─── SAVE TO SUPABASE ─────────────────────────────────────────────────────────
+// SAVE TO SUPABASE
 async function saveNewsletterIssue(
   issueNumber: number,
   periodStart: Date,
@@ -233,7 +247,9 @@ async function saveNewsletterIssue(
   introText: string,
   categoryGroups: CategoryGroup[]
 ): Promise<string | null> {
-  // Maak nieuwsbrief editie aan
+  const monthYear = periodEnd.toLocaleDateString('nl-NL', { month: 'long', year: 'numeric' });
+  const subjectLine = 'AI Governance Update #' + issueNumber + ' - ' + monthYear;
+
   const { data: issue, error: issueError } = await supabase
     .from('newsletter_issues')
     .insert({
@@ -241,20 +257,19 @@ async function saveNewsletterIssue(
       period_start: periodStart.toISOString().split('T')[0],
       period_end: periodEnd.toISOString().split('T')[0],
       status: 'draft',
-      subject: `AI Governance Update #${issueNumber} - ${periodEnd.toLocaleDateString('nl-NL', { month: 'long', year: 'numeric' })}`,
+      subject: subjectLine,
       intro_text: introText,
     })
     .select('id')
     .single();
 
   if (issueError || !issue) {
-    console.error('❌ Fout bij aanmaken editie:', issueError);
+    console.error('Fout bij aanmaken editie:', issueError);
     return null;
   }
 
-  console.log(`✅ Editie #${issueNumber} aangemaakt: ${issue.id}`);
+  console.log('Editie #' + issueNumber + ' aangemaakt: ' + issue.id);
 
-  // Sla artikelen op per categorie
   const articleRows = categoryGroups.flatMap((group, groupIdx) =>
     group.articles.map((article, articleIdx) => ({
       issue_id: issue.id,
@@ -272,18 +287,18 @@ async function saveNewsletterIssue(
       .insert(articleRows);
 
     if (articlesError) {
-      console.error('❌ Fout bij opslaan artikelen:', articlesError);
+      console.error('Fout bij opslaan artikelen:', articlesError);
     } else {
-      console.log(`✅ ${articleRows.length} artikelen opgeslagen voor editie #${issueNumber}`);
+      console.log(articleRows.length + ' artikelen opgeslagen voor editie #' + issueNumber);
     }
   }
 
   return issue.id;
 }
 
-// ─── MAIN PROCESS ─────────────────────────────────────────────────────────────
+// MAIN PROCESS
 async function generateNewsletterDraft(): Promise<void> {
-  console.log('🗞️ Nieuwsbrief draft genereren...');
+  console.log('Nieuwsbrief draft genereren...');
 
   const { create, issueNumber, periodStart } = await shouldCreateNewIssue();
   if (!create) return;
@@ -292,50 +307,50 @@ async function generateNewsletterDraft(): Promise<void> {
 
   const articles = await fetchArticlesForPeriod(periodStart);
   if (articles.length === 0) {
-    console.log('⚠️ Geen artikelen gevonden voor deze periode');
+    console.log('Geen artikelen gevonden voor deze periode');
     return;
   }
 
-  console.log(`🤖 Claude categoriseert ${articles.length} artikelen...`);
+  console.log('Claude categoriseert ' + articles.length + ' artikelen...');
   const categoryGroups = await categorizeWithClaude(articles);
 
   const totalSelected = categoryGroups.reduce((sum, g) => sum + g.articles.length, 0);
-  console.log(`📋 ${totalSelected} artikelen verdeeld over ${categoryGroups.length} categorieën`);
+  console.log(totalSelected + ' artikelen verdeeld over ' + categoryGroups.length + ' categorieen');
 
   const introText = await generateIntroText(categoryGroups, periodStart, periodEnd);
 
   const issueId = await saveNewsletterIssue(issueNumber, periodStart, periodEnd, introText, categoryGroups);
 
   if (issueId) {
-    console.log(`✅ Editie #${issueNumber} klaar voor review: /review/${issueId}`);
+    console.log('Editie #' + issueNumber + ' klaar voor review: /review/' + issueId);
   }
 }
 
-// ─── HANDLERS ─────────────────────────────────────────────────────────────────
+// HANDLERS
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (authHeader !== 'Bearer ' + process.env.CRON_SECRET) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   try {
     await generateNewsletterDraft();
     return NextResponse.json({ status: 'done' }, { status: 200 });
   } catch (error) {
-    console.error('❌ Error:', error);
+    console.error('Error:', error);
     return NextResponse.json({ error: 'Failed', details: String(error) }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
   const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (authHeader !== 'Bearer ' + process.env.CRON_SECRET) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   try {
     await generateNewsletterDraft();
     return NextResponse.json({ status: 'done' }, { status: 200 });
   } catch (error) {
-    console.error('❌ Error:', error);
+    console.error('Error:', error);
     return NextResponse.json({ error: 'Failed', details: String(error) }, { status: 500 });
   }
 }
