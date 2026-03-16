@@ -67,7 +67,7 @@ function buildExternalHtml(issue: any, articles: any[]): string {
   return html;
 }
 
-// INTERNAL — blogvorm met lopende tekst en inline bronlinks
+// INTERNAL — schone blogvorm met tussenkopjes en inline hyperlinks
 function buildInternalHtml(issue: any, articles: any[]): string {
   const periodStart = new Date(issue.period_start).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long' });
   const periodEnd = new Date(issue.period_end).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -78,32 +78,39 @@ function buildInternalHtml(issue: any, articles: any[]): string {
     articleLookup[a.article_id] = { title: a.title, url: a.url };
   });
 
-  // Vervang [REF:uuid] markers met inline HTML-links
-  function resolveRefs(text: string, catArticles: any[]): string {
-    return text.replace(/\[REF:([a-f0-9-]+)\]/g, (_match: string, id: string) => {
-      const art = articleLookup[id] || catArticles.find((a: any) => a.article_id === id);
-      if (!art) return '';
-      const title = art.title || 'bron';
-      const url = art.url || '#';
-      // Gebruik een korte ankertekst: publicatienaam of eerste 4 woorden van titel
-      const anchor = title.split(' ').slice(0, 4).join(' ');
-      return '<a href="' + url + '" style="color: #2b6cb0; text-decoration: underline; font-weight: 500;">' + anchor + '</a>';
+  // Vervang [REF:uuid|ankertekst] of [REF:uuid] met HTML-links
+  function resolveRefs(text: string): string {
+    // Met ankertekst: [REF:uuid|ankertekst]
+    text = text.replace(/\[REF:([a-f0-9-]+)\|([^\]]+)\]/g, (_match: string, id: string, anchor: string) => {
+      const art = articleLookup[id];
+      if (!art) return anchor;
+      return '<a href="' + art.url + '" style="color: #2b6cb0; text-decoration: underline;">' + anchor + '</a>';
     });
+    // Zonder ankertekst: [REF:uuid] — fallback naar eerste 4 woorden van titel
+    text = text.replace(/\[REF:([a-f0-9-]+)\]/g, (_match: string, id: string) => {
+      const art = articleLookup[id];
+      if (!art) return '';
+      const anchor = art.title.split(' ').slice(0, 4).join(' ');
+      return '<a href="' + art.url + '" style="color: #2b6cb0; text-decoration: underline;">' + anchor + '</a>';
+    });
+    return text;
   }
 
-  let html = '<div style="font-family: Georgia, serif; max-width: 680px; margin: 0 auto; padding: 32px; color: #1a202c; background: #ffffff;">';
+  let html = '<div style="font-family: Georgia, serif; max-width: 660px; margin: 0 auto; padding: 40px 32px; color: #1a202c; background: #ffffff;">';
 
   // Header
-  html += '<div style="border-bottom: 2px solid #1a202c; padding-bottom: 20px; margin-bottom: 32px;">';
-  html += '<p style="margin: 0 0 6px 0; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #718096; font-family: Arial, sans-serif;">Digidactics &middot; Intern &middot; Niet voor verspreiding</p>';
-  html += '<h1 style="margin: 0 0 8px 0; font-size: 26px; font-weight: bold; color: #1a202c; line-height: 1.2;">Marktanalyse #' + issue.issue_number + '</h1>';
-  html += '<p style="margin: 0; font-size: 14px; color: #4a5568; font-family: Arial, sans-serif;">' + periodStart + ' - ' + periodEnd + '</p>';
+  html += '<div style="border-bottom: 2px solid #1a202c; padding-bottom: 20px; margin-bottom: 36px;">';
+  html += '<p style="margin: 0 0 8px 0; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #a0aec0; font-family: Arial, sans-serif;">Digidactics &nbsp;&middot;&nbsp; Intern &nbsp;&middot;&nbsp; Niet voor verspreiding</p>';
+  html += '<h1 style="margin: 0 0 10px 0; font-size: 28px; font-weight: bold; color: #1a202c; line-height: 1.2;">Marktanalyse #' + issue.issue_number + '</h1>';
+  html += '<p style="margin: 0; font-size: 14px; color: #718096; font-family: Arial, sans-serif;">' + periodStart + ' &ndash; ' + periodEnd + '</p>';
   html += '</div>';
 
   // Intro
-  html += '<p style="font-size: 17px; line-height: 1.8; color: #2d3748; margin-bottom: 36px; font-style: italic; border-left: 3px solid #4299e1; padding-left: 16px;">' + issue.intro_text + '</p>';
+  if (issue.intro_text) {
+    html += '<p style="font-size: 17px; line-height: 1.8; color: #2d3748; margin: 0 0 40px 0; padding-left: 16px; border-left: 3px solid #4299e1; font-style: italic;">' + issue.intro_text + '</p>';
+  }
 
-  // Categorieen als blogsecties
+  // Categorieen als blogsecties — alleen prose, geen artikellijst
   CATEGORIES.forEach(cat => {
     const catArticles = articles
       .filter((a: any) => a.category === cat && a.included)
@@ -112,31 +119,16 @@ function buildInternalHtml(issue: any, articles: any[]): string {
     if (catArticles.length === 0) return;
 
     const rawSummary = catArticles[0]?.category_summary || '';
-    const resolvedSummary = resolveRefs(rawSummary, catArticles);
+    const resolvedText = resolveRefs(rawSummary);
 
-    html += '<div style="margin-bottom: 40px;">';
-
-    // Sectietitel
-    html += '<h2 style="font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: #4299e1; font-family: Arial, sans-serif; margin: 0 0 12px 0; font-weight: 600;">' + cat + '</h2>';
-
-    // Lopende tekst met opgeloste bronlinks
-    html += '<p style="font-size: 15px; line-height: 1.85; color: #2d3748; margin: 0 0 16px 0;">' + resolvedSummary + '</p>';
-
-    // Bronnenlijst onderaan sectie
-    html += '<div style="margin-top: 12px; padding: 10px 14px; background: #f7fafc; border-radius: 4px; font-family: Arial, sans-serif;">';
-    html += '<p style="margin: 0 0 6px 0; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: #a0aec0;">Bronnen</p>';
-    catArticles.forEach((a: any) => {
-      html += '<p style="margin: 0 0 4px 0; font-size: 12px; color: #4a5568;">';
-      html += '<a href="' + a.url + '" style="color: #4299e1; text-decoration: none;">' + a.title + '</a>';
-      html += ' <span style="color: #a0aec0;">&middot; ' + a.score + '/10</span>';
-      html += '</p>';
-    });
+    html += '<div style="margin-bottom: 36px;">';
+    html += '<h2 style="font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #4299e1; font-family: Arial, sans-serif; margin: 0 0 14px 0; font-weight: 700;">' + cat + '</h2>';
+    html += '<p style="font-size: 16px; line-height: 1.9; color: #2d3748; margin: 0;">' + resolvedText + '</p>';
     html += '</div>';
-    html += '</div>';
-    html += '<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 0 0 40px 0;">';
+    html += '<hr style="border: none; border-top: 1px solid #edf2f7; margin: 0 0 36px 0;">';
   });
 
-  html += '<p style="font-size: 11px; color: #a0aec0; font-family: Arial, sans-serif;">Digidactics &middot; Interne Marktanalyse &middot; Vertrouwelijk</p>';
+  html += '<p style="font-size: 11px; color: #a0aec0; font-family: Arial, sans-serif; margin-top: 16px;">Digidactics &middot; Interne Marktanalyse &middot; Vertrouwelijk</p>';
   html += '</div>';
 
   return html;

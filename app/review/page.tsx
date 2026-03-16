@@ -303,103 +303,154 @@ function IssueEditor({
         {preview ? (
           // PREVIEW MODE
           <div className="bg-white rounded-xl border border-gray-200 p-8">
-            <div style={{ fontFamily: 'Arial, sans-serif', maxWidth: '600px', margin: '0 auto' }}>
-              <h1 style={{ color: '#1a202c', borderBottom: '2px solid #4299e1', paddingBottom: '10px', fontSize: '22px' }}>
-                🤖 AI Governance Update #{issue.issue_number}
-              </h1>
-              <p style={{ color: '#4a5568', fontSize: '13px' }}>
-                {new Date(issue.period_start).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long' })} –{' '}
-                {new Date(issue.period_end).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' })}
-              </p>
-              <p style={{ color: '#2d3748', lineHeight: '1.6', marginTop: '16px' }}>{issue.intro_text}</p>
-              <hr style={{ border: '1px solid #e2e8f0', margin: '24px 0' }} />
+            <div style={{ fontFamily: issue.type === 'internal' ? 'Georgia, serif' : 'Arial, sans-serif', maxWidth: '600px', margin: '0 auto' }}>
+              {issue.type === 'internal' ? (
+                <>
+                  <p style={{ fontSize: '11px', letterSpacing: '2px', textTransform: 'uppercase', color: '#a0aec0', marginBottom: '8px' }}>Digidactics · Intern · Niet voor verspreiding</p>
+                  <h1 style={{ color: '#1a202c', borderBottom: '2px solid #1a202c', paddingBottom: '16px', fontSize: '26px', marginBottom: '8px' }}>
+                    Marktanalyse #{issue.issue_number}
+                  </h1>
+                  <p style={{ color: '#718096', fontSize: '14px', marginBottom: '32px' }}>
+                    {new Date(issue.period_start).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long' })} –{' '}
+                    {new Date(issue.period_end).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  </p>
+                  {issue.intro_text && (
+                    <p style={{ color: '#2d3748', lineHeight: '1.8', marginBottom: '36px', paddingLeft: '16px', borderLeft: '3px solid #4299e1', fontStyle: 'italic', fontSize: '16px' }}>
+                      {issue.intro_text}
+                    </p>
+                  )}
+                  {CATEGORIES.map(cat => {
+                    const catArticles = includedArticles.filter(a => a.category === cat);
+                    if (catArticles.length === 0) return null;
+                    const summary = catArticles[0]?.category_summary || '';
+                    return (
+                      <div key={cat} style={{ marginBottom: '32px' }}>
+                        <h2 style={{ fontSize: '11px', letterSpacing: '2px', textTransform: 'uppercase', color: '#4299e1', fontFamily: 'Arial, sans-serif', marginBottom: '12px', fontWeight: '700' }}>{cat}</h2>
+                        <p style={{ color: '#2d3748', lineHeight: '1.9', fontSize: '15px' }}>{summary}</p>
+                        <hr style={{ border: 'none', borderTop: '1px solid #edf2f7', marginTop: '24px' }} />
+                      </div>
+                    );
+                  })}
+                </>
+              ) : (
+                <>
+                  <h1 style={{ color: '#1a202c', borderBottom: '2px solid #4299e1', paddingBottom: '10px', fontSize: '22px' }}>
+                    AI Governance Update #{issue.issue_number}
+                  </h1>
+                  <p style={{ color: '#4a5568', fontSize: '13px' }}>
+                    {new Date(issue.period_start).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long' })} –{' '}
+                    {new Date(issue.period_end).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  </p>
+                  <p style={{ color: '#2d3748', lineHeight: '1.6', marginTop: '16px' }}>{issue.intro_text}</p>
+                  <hr style={{ border: '1px solid #e2e8f0', margin: '24px 0' }} />
+                  {CATEGORIES.map(cat => {
+                    const catArticles = includedArticles.filter(a => a.category === cat);
+                    if (catArticles.length === 0) return null;
+                    const summary = catArticles[0]?.category_summary;
+                    return (
+                      <div key={cat} style={{ marginBottom: '28px' }}>
+                        <h2 style={{ color: '#1a202c', fontSize: '16px', borderLeft: '3px solid #4299e1', paddingLeft: '10px' }}>{cat}</h2>
+                        {summary && <p style={{ color: '#4a5568', fontSize: '13px', lineHeight: '1.6' }}>{summary}</p>}
+                        <ul style={{ paddingLeft: '20px' }}>
+                          {catArticles.map(a => (
+                            <li key={a.id} style={{ marginBottom: '8px' }}>
+                              <a href={a.url} style={{ color: '#4299e1', fontSize: '14px' }}>{a.title}</a>
+                              <p style={{ color: '#718096', fontSize: '12px', margin: '2px 0 0 0' }}>{a.why_matters}</p>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+            </div>
+          </div>
+        ) : (
+          // EDITOR MODE
+          issue.type === 'internal' ? (
+            // Interne editie — alleen prose tekst per categorie, geen checkboxes
+            <div className="space-y-6">
               {CATEGORIES.map(cat => {
-                const catArticles = includedArticles.filter(a => a.category === cat);
+                const catArticles = issue.articles
+                  .filter(a => a.category === cat)
+                  .sort((a, b) => a.display_order - b.display_order);
                 if (catArticles.length === 0) return null;
                 const summary = catArticles[0]?.category_summary;
                 return (
-                  <div key={cat} style={{ marginBottom: '28px' }}>
-                    <h2 style={{ color: '#1a202c', fontSize: '16px', borderLeft: '3px solid #4299e1', paddingLeft: '10px' }}>{cat}</h2>
-                    {summary && <p style={{ color: '#4a5568', fontSize: '13px', lineHeight: '1.6' }}>{summary}</p>}
-                    <ul style={{ paddingLeft: '20px' }}>
-                      {catArticles.map(a => (
-                        <li key={a.id} style={{ marginBottom: '8px' }}>
-                          <a href={a.url} style={{ color: '#4299e1', fontSize: '14px' }}>{a.title}</a>
-                          <p style={{ color: '#718096', fontSize: '12px', margin: '2px 0 0 0' }}>{a.why_matters}</p>
-                        </li>
-                      ))}
-                    </ul>
+                  <div key={cat} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                    <div className="px-6 py-4 border-b border-gray-100">
+                      <h2 className="font-semibold text-gray-900 text-sm tracking-widest uppercase text-blue-500">{cat}</h2>
+                    </div>
+                    {summary && (
+                      <div className="px-6 py-5">
+                        <p className="text-sm text-gray-700 leading-relaxed">{summary}</p>
+                      </div>
+                    )}
                   </div>
                 );
               })}
             </div>
-          </div>
-        ) : (
-          // EDITOR MODE — artikelen per categorie
-          CATEGORIES.map(cat => {
-            const catArticles = issue.articles
-              .filter(a => a.category === cat)
-              .sort((a, b) => a.display_order - b.display_order);
-            if (catArticles.length === 0) return null;
-            const summary = catArticles[0]?.category_summary;
-            const includedCount = catArticles.filter(a => a.included).length;
+          ) : (
+            // Externe editie — artikelen per categorie met checkboxes
+            CATEGORIES.map(cat => {
+              const catArticles = issue.articles
+                .filter(a => a.category === cat)
+                .sort((a, b) => a.display_order - b.display_order);
+              if (catArticles.length === 0) return null;
+              const summary = catArticles[0]?.category_summary;
+              const includedCount = catArticles.filter(a => a.included).length;
 
-            return (
-              <div key={cat} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-                  <div>
-                    <h2 className="font-semibold text-gray-900">{cat}</h2>
-                    <p className="text-xs text-gray-500 mt-0.5">{includedCount} van {catArticles.length} geselecteerd</p>
-                  </div>
-                </div>
-                {summary && (
-                  <div className="px-6 py-3 bg-blue-50 border-b border-blue-100">
-                    {issue.type === 'internal' ? (
-  <div
-    className="text-sm text-blue-900 prose prose-sm max-w-none"
-    dangerouslySetInnerHTML={{ __html: summary }}
-  />
-) : (
-  <p className="text-sm text-blue-800 italic">{summary}</p>
-)}
-                  </div>
-                )}
-                <div className="divide-y divide-gray-100">
-                  {catArticles.map(article => (
-                    <div
-                      key={article.id}
-                      className={`px-6 py-4 flex gap-4 transition-colors ${article.included ? '' : 'opacity-40 bg-gray-50'}`}
-                    >
-                      <div className="pt-0.5">
-                        <input
-                          type="checkbox"
-                          checked={article.included}
-                          onChange={() => toggleArticle(article.id)}
-                          className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer"
-                        />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start gap-2">
-                          <a
-                            href={article.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-sm font-medium text-blue-600 hover:text-blue-800 leading-snug"
-                          >
-                            {article.title}
-                          </a>
-                          <span className="shrink-0 text-xs bg-gray-100 text-gray-600 rounded px-1.5 py-0.5 font-medium">
-                            {article.score}/10
-                          </span>
-                        </div>
-                        <p className="text-xs text-gray-500 mt-1 leading-relaxed">{article.why_matters}</p>
-                      </div>
+              return (
+                <div key={cat} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                    <div>
+                      <h2 className="font-semibold text-gray-900">{cat}</h2>
+                      <p className="text-xs text-gray-500 mt-0.5">{includedCount} van {catArticles.length} geselecteerd</p>
                     </div>
-                  ))}
+                  </div>
+                  {summary && (
+                    <div className="px-6 py-3 bg-blue-50 border-b border-blue-100">
+                      <p className="text-sm text-blue-800 italic">{summary}</p>
+                    </div>
+                  )}
+                  <div className="divide-y divide-gray-100">
+                    {catArticles.map(article => (
+                      <div
+                        key={article.id}
+                        className={`px-6 py-4 flex gap-4 transition-colors ${article.included ? '' : 'opacity-40 bg-gray-50'}`}
+                      >
+                        <div className="pt-0.5">
+                          <input
+                            type="checkbox"
+                            checked={article.included}
+                            onChange={() => toggleArticle(article.id)}
+                            className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer"
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start gap-2">
+                            <a
+                              href={article.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm font-medium text-blue-600 hover:text-blue-800 leading-snug"
+                            >
+                              {article.title}
+                            </a>
+                            <span className="shrink-0 text-xs bg-gray-100 text-gray-600 rounded px-1.5 py-0.5 font-medium">
+                              {article.score}/10
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1 leading-relaxed">{article.why_matters}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            );
-          })
+              );
+            })
+          )
         )}
       </div>
     </div>

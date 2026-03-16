@@ -177,7 +177,7 @@ async function categorizeForExternal(articles: SupabaseArticle[]): Promise<Categ
   }
 }
 
-// CATEGORIZE FOR INTERNAL ANALYSIS — plain text with [REF:id] markers
+// CATEGORIZE FOR INTERNAL ANALYSIS — plain text with [REF:id|anchor] markers
 async function categorizeForInternal(articles: SupabaseArticle[]): Promise<CategoryGroup[]> {
   const articleList = articles.map((a, idx) => [
     'Artikel ' + (idx + 1) + ':',
@@ -202,18 +202,22 @@ async function categorizeForInternal(articles: SupabaseArticle[]): Promise<Categ
     'SCHRIJFSTIJL:',
     'Vloeiende lopende tekst per categorie, geen bulletlijsten.',
     'Analytisch, direct, zakelijk. Mag stellig zijn.',
-    'Verwijs naar bronnen inline met het marker [REF:artikel_id] direct na de bewering.',
-    'Voorbeeld: "Meer dan 80 procent van grote bedrijven gebruikt AI zonder governance-kaders [REF:abc-123]."',
-    'Verbind ontwikkelingen expliciet aan RouteAI- en AISA-positionering waar relevant.',
+    'Verwijs naar bronnen inline met het marker [REF:artikel_id|ankertekst].',
+    'De ankertekst is een korte natuurlijke omschrijving die past in de zin.',
+    'Voorbeelden:',
+    '  "Meer dan 80 procent van grote bedrijven gebruikt AI zonder governance [REF:abc-123|onderzoek van Nutanix]."',
+    '  "De EU AI Act nadert haar eerste handhavingsmoment [REF:def-456|analyse van Eversheds Sutherland]."',
+    '  "Shadow AI groeit sneller dan beleid bijhoudt [REF:ghi-789|MIT Technology Review]."',
+    'Verbind ontwikkelingen expliciet aan RouteAI en AISA waar relevant.',
     'Geef concrete strategische observaties.',
     '',
     'STRUCTUUR PER CATEGORIE:',
-    '3-5 zinnen lopende tekst met minimaal 1-2 [REF:id] markers.',
+    '3-5 zinnen lopende tekst met minimaal 1-2 [REF:id|ankertekst] markers.',
     '',
     'TAAK:',
     '1. Selecteer de ' + MAX_ARTICLES_PER_CATEGORY_INTERNAL + ' meest strategisch relevante artikelen per categorie.',
     '2. Schrijf per categorie een analyseparagraaf als gewone tekst.',
-    '3. Gebruik [REF:artikel_id] om bronnen aan te duiden, waarbij artikel_id de ID is uit de artikellijst.',
+    '3. Gebruik [REF:artikel_id|ankertekst] om bronnen in de tekst te verwerken.',
     '',
     'Categorieen:',
     '   - "Pijnpunten en kansen"',
@@ -224,7 +228,7 @@ async function categorizeForInternal(articles: SupabaseArticle[]): Promise<Categ
     '   - "Governance en compliance"',
     '',
     'Geef je antwoord als JSON (alleen gewone tekst in summary, geen HTML of aanhalingstekens):',
-    '{"categories": [{"category": "naam", "summary": "Lopende tekst met bronmarker [REF:uuid] en analyse.", "articles": [{"article_id": "uuid", "category": "naam", "title": "titel", "url": "url", "score": 8, "why_matters": "strategische betekenis"}]}]}',
+    '{"categories": [{"category": "naam", "summary": "Lopende tekst met bron [REF:uuid|ankertekst] verwerkt.", "articles": [{"article_id": "uuid", "category": "naam", "title": "titel", "url": "url", "score": 8, "why_matters": "strategische betekenis"}]}]}',
     '',
     'Artikelen:',
     articleList,
