@@ -25,7 +25,7 @@ type Category = typeof CATEGORIES[number];
 const MIN_SCORE = 7;
 const ISSUE_INTERVAL_DAYS = 14;
 const MAX_ARTICLES_PER_CATEGORY_EXTERNAL = 4;
-const MAX_ARTICLES_PER_CATEGORY_INTERNAL = 2;
+const MAX_ARTICLES_PER_CATEGORY_INTERNAL = 3;
 const MAX_TOTAL_ARTICLES = 20;
 
 interface SupabaseArticle {
@@ -138,20 +138,16 @@ async function categorizeForExternal(articles: SupabaseArticle[]): Promise<Categ
     'Vermijd: "In deze editie", "Zoals bekend", "Het is duidelijk dat".',
     '',
     'TAAK:',
-    '1. Verdeel artikelen over de categorieen (kies per artikel de beste):',
-    '   - "Pijnpunten en kansen" - concrete uitdagingen en kansen voor MKB rondom AI',
-    '   - "Nieuws EU AI Act" - updates over de EU AI Act (deadlines, handhaving, guidance)',
-    '   - "Belangrijkste nieuwsfeiten" - algemeen belangrijk AI-nieuws voor MKB',
-    '   - "Internationale lessen" - wat kunnen Nederlandse MKBers leren van andere landen?',
-    '   - "Technologische ontwikkelingen" - relevante AI-technologie voor MKB-praktijk',
-    '   - "Governance en compliance" - frameworks, ISO 42001, tools, praktische compliance',
+    '1. Verdeel artikelen over de categorieen:',
+    '   - "Pijnpunten en kansen"',
+    '   - "Nieuws EU AI Act"',
+    '   - "Belangrijkste nieuwsfeiten"',
+    '   - "Internationale lessen"',
+    '   - "Technologische ontwikkelingen"',
+    '   - "Governance en compliance"',
     '',
     '2. Selecteer maximaal ' + MAX_ARTICLES_PER_CATEGORY_EXTERNAL + ' artikelen per categorie.',
-    '   Laat categorieen leeg als er geen goede artikelen voor zijn.',
-    '',
-    '3. Schrijf per categorie een intro van 2-3 zinnen.',
-    '   Begin met de meest opvallende ontwikkeling - alsof het de eerste zinnen van een krantenartikel zijn.',
-    '   Puur informatief, geen verwijzing naar aanbieders of oplossingen.',
+    '3. Schrijf per categorie een intro van 2-3 zinnen, journalistieke toon, puur informatief.',
     '',
     'Geef je antwoord als JSON:',
     '{"categories": [{"category": "naam", "summary": "intro tekst", "articles": [{"article_id": "uuid", "category": "naam", "title": "titel", "url": "url", "score": 8, "why_matters": "waarom relevant"}]}]}',
@@ -181,7 +177,7 @@ async function categorizeForExternal(articles: SupabaseArticle[]): Promise<Categ
   }
 }
 
-// CATEGORIZE FOR INTERNAL ANALYSIS
+// CATEGORIZE FOR INTERNAL ANALYSIS — blog prose with inline links
 async function categorizeForInternal(articles: SupabaseArticle[]): Promise<CategoryGroup[]> {
   const articleList = articles.map((a, idx) => [
     'Artikel ' + (idx + 1) + ':',
@@ -201,52 +197,58 @@ async function categorizeForInternal(articles: SupabaseArticle[]): Promise<Categ
     '- RouteAI: AI governance platform voor Nederlandse MKB EU AI Act compliance',
     '- AISA: AI Skills Accelerator cohorttraining voor MKB-medewerkers',
     '',
-    'Dit is een INTERNE analyse voor de Digidactics-directie. Schrijf analytisch en direct.',
-    'Doel: marktintelligentie, strategische kansen, en concrete aanbevelingen.',
+    'Schrijf een INTERNE marktanalyse in blogvorm voor de Digidactics-directie.',
     '',
     'SCHRIJFSTIJL:',
+    'Vloeiende lopende tekst per categorie, geen bulletlijsten.',
     'Analytisch, direct, zakelijk. Mag stellig zijn.',
-    'Verbind ontwikkelingen expliciet aan RouteAI- en AISA-positionering.',
-    'Gebruik bronvermeldingen (titels + URLs) bij elke claim.',
-    'Geef concrete aanbevelingen: wat moet Digidactics nu doen of weten?',
+    'Bronnen worden inline verweven als HTML-ankers, elegant en natuurlijk.',
+    'Voorbeeld: "Uit <a href="https://...">onderzoek van Nutanix</a> blijkt dat..."',
+    'Of: "Een <a href="https://...">analyse in MIT Technology Review</a> laat zien..."',
+    'Verbind ontwikkelingen expliciet aan RouteAI- en AISA-positionering waar relevant.',
+    'Geef concrete strategische observaties: wat betekent dit voor de marktpositie?',
+    'Schrijf alsof je een doorwrocht opiniestuk schrijft voor een vakblad.',
+    '',
+    'STRUCTUUR PER CATEGORIE:',
+    '- 3-5 zinnen lopende tekst',
+    '- Minimaal 1-2 bronnen inline verwerkt als HTML-link',
+    '- Eindig eventueel met een scherpe observatie of open vraag',
     '',
     'TAAK:',
-    '1. Selecteer de 2 meest strategisch relevante artikelen per categorie (max ' + MAX_ARTICLES_PER_CATEGORY_INTERNAL + ').',
-    '   Kies op strategische waarde, niet op nieuwswaarde.',
-    '',
-    '2. Schrijf per categorie een analyse van 3-5 zinnen:',
-    '   - Wat is de kern van de ontwikkeling?',
-    '   - Wat betekent dit voor de marktpositie van RouteAI en/of AISA?',
-    '   - Welke concrete actie of aanpassing verdient overweging?',
-    '   - Noem relevante bronnen bij naam.',
+    '1. Selecteer de ' + MAX_ARTICLES_PER_CATEGORY_INTERNAL + ' meest strategisch relevante artikelen per categorie.',
+    '2. Schrijf per categorie een analyseparagraaf in HTML-proza (geen Markdown).',
+    '3. Verwerk bronlinks inline in de tekst als <a href="URL">ankertekst</a>.',
     '',
     'Categorieen:',
-    '   - "Pijnpunten en kansen" - MKB-pijnpunten die RouteAI of AISA adresseren',
-    '   - "Nieuws EU AI Act" - regelgevingsontwikkelingen met directe impact op propositie',
-    '   - "Belangrijkste nieuwsfeiten" - markt- en concurrentiesignalen',
-    '   - "Internationale lessen" - wat doen andere markten dat hier relevant is?',
-    '   - "Technologische ontwikkelingen" - tech die de propositie versterkt of bedreigt',
-    '   - "Governance en compliance" - frameworks en standaarden die kansen of risicos bieden',
+    '   - "Pijnpunten en kansen"',
+    '   - "Nieuws EU AI Act"',
+    '   - "Belangrijkste nieuwsfeiten"',
+    '   - "Internationale lessen"',
+    '   - "Technologische ontwikkelingen"',
+    '   - "Governance en compliance"',
     '',
-    'Geef je antwoord als JSON:',
-    '{"categories": [{"category": "naam", "summary": "analytische tekst met bronvermelding", "articles": [{"article_id": "uuid", "category": "naam", "title": "titel", "url": "url", "score": 8, "why_matters": "strategische betekenis"}]}]}',
+    'Geef je antwoord als JSON waarbij summary HTML-proza bevat:',
+    '{"categories": [{"category": "naam", "summary": "<p>Lopende tekst met <a href=\\"url\\">inline bron</a> en analyse...</p>", "articles": [{"article_id": "uuid", "category": "naam", "title": "titel", "url": "url", "score": 8, "why_matters": "strategische betekenis"}]}]}',
     '',
     'Artikelen:',
     articleList,
     '',
-    'Geef alleen geldige JSON terug, geen uitleg of Markdown.',
+    'Geef alleen geldige JSON terug. De summary mag HTML bevatten maar geen aanhalingstekens die de JSON breken - gebruik HTML entities waar nodig.',
   ].join('\n');
 
   try {
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 6000,
+      max_tokens: 8000,
       messages: [{ role: 'user', content: prompt }],
     });
 
     const responseText = message.content[0].type === 'text' ? message.content[0].text : '';
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return [];
+    if (!jsonMatch) {
+      console.error('Geen geldige JSON in interne Claude-response');
+      return [];
+    }
 
     const parsed = JSON.parse(jsonMatch[0]);
     return parsed.categories || [];
@@ -282,17 +284,17 @@ async function generateIntroText(
     'Begin met de meest opvallende ontwikkeling - als de eerste zinnen van een krantenartikel.',
     'Geen verwijzing naar Digidactics, RouteAI of AISA.',
     'Vermijd: "In deze editie", "Beste lezer", open deuren.',
-    'Schrijf in het Nederlands.',
+    'Schrijf in het Nederlands. Geef alleen de tekst terug, geen opmaak.',
   ].join('\n');
 
   const internalInstructions = [
-    'Schrijf een korte strategische inleiding (3-4 zinnen) voor een interne marktanalyse voor Digidactics-directie.',
+    'Schrijf een strategische inleiding van 3-4 zinnen voor een interne marktanalyse voor Digidactics-directie.',
     'Periode: ' + startStr + ' - ' + endStr,
     'Meest opvallende ontwikkelingen: ' + topArticles,
     '',
-    'Stijl: direct, analytisch, zakelijk. Verbind de periode expliciet aan de marktpositie van RouteAI en AISA.',
-    'Mag stellig zijn: wat is de strategische betekenis van deze twee weken?',
-    'Schrijf in het Nederlands.',
+    'Stijl: direct, analytisch, zakelijk. Mag stellig zijn.',
+    'Benoem de strategische betekenis van de periode voor RouteAI en AISA.',
+    'Schrijf in het Nederlands. Geef alleen de tekst terug, geen opmaak.',
   ].join('\n');
 
   try {

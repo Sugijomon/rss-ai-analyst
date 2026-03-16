@@ -19,6 +19,7 @@ interface Article {
 interface Issue {
   id: string;
   issue_number: number;
+  type: 'external' | 'internal';
   period_start: string;
   period_end: string;
   status: 'draft' | 'ready' | 'sent';
@@ -125,7 +126,6 @@ function IssueList({ issues, onSelect }: { issues: Issue[]; onSelect: (i: Issue)
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="flex items-center gap-3">
-                      <span className="font-semibold text-gray-900">Editie #{issue.issue_number}</span>
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[issue.status]}`}>
                         {STATUS_LABELS[issue.status]}
                       </span>
@@ -232,7 +232,7 @@ function IssueEditor({
           <div className="flex items-center gap-4">
             <button onClick={onBack} className="text-gray-400 hover:text-gray-600 text-sm">← Terug</button>
             <div>
-              <span className="font-semibold text-gray-900">Editie #{issue.issue_number}</span>
+              <span className="font-semibold text-gray-900">Editie #{issue.issue_number} — {issue.type === 'internal' ? 'Intern' : 'Extern'}</span>
               <span className={`ml-3 text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[issue.status]}`}>
                 {STATUS_LABELS[issue.status]}
               </span>
