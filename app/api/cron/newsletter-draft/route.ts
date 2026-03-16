@@ -23,7 +23,7 @@ const CATEGORIES = [
 type Category = typeof CATEGORIES[number];
 
 const MIN_SCORE = 7;
-const ISSUE_INTERVAL_DAYS = 14;
+const ISSUE_INTERVAL_DAYS = 7;
 const MAX_ARTICLES_PER_CATEGORY = 4;
 const MAX_TOTAL_ARTICLES = 20;
 
