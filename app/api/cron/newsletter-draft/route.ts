@@ -23,8 +23,9 @@ const CATEGORIES = [
 type Category = typeof CATEGORIES[number];
 
 const MIN_SCORE = 7;
-const ISSUE_INTERVAL_DAYS = 7;
-const MAX_ARTICLES_PER_CATEGORY = 4;
+const ISSUE_INTERVAL_DAYS = 14;
+const MAX_ARTICLES_PER_CATEGORY_EXTERNAL = 4;
+const MAX_ARTICLES_PER_CATEGORY_INTERNAL = 2;
 const MAX_TOTAL_ARTICLES = 20;
 
 interface SupabaseArticle {
@@ -59,7 +60,8 @@ interface CategoryGroup {
 async function shouldCreateNewIssue(): Promise<{ create: boolean; issueNumber: number; periodStart: Date }> {
   const { data: lastIssue } = await supabase
     .from('newsletter_issues')
-    .select('issue_number, period_end, created_at')
+    .select('issue_number, created_at')
+    .eq('type', 'external')
     .order('issue_number', { ascending: false })
     .limit(1)
     .single();
@@ -104,12 +106,12 @@ async function fetchArticlesForPeriod(periodStart: Date): Promise<SupabaseArticl
     return [];
   }
 
-  console.log((data?.length || 0) + ' artikelen gevonden vanaf ' + startDate + ' met score >= ' + MIN_SCORE);
+  console.log((data?.length || 0) + ' artikelen gevonden vanaf ' + startDate);
   return data || [];
 }
 
-// CATEGORIZE & SUMMARIZE WITH CLAUDE
-async function categorizeWithClaude(articles: SupabaseArticle[]): Promise<CategoryGroup[]> {
+// CATEGORIZE FOR EXTERNAL NEWSLETTER
+async function categorizeForExternal(articles: SupabaseArticle[]): Promise<CategoryGroup[]> {
   const articleList = articles.map((a, idx) => [
     'Artikel ' + (idx + 1) + ':',
     'ID: ' + a.id,
@@ -119,9 +121,7 @@ async function categorizeWithClaude(articles: SupabaseArticle[]): Promise<Catego
     'Samenvatting: ' + (a.summary ? a.summary.join(' | ') : ''),
     'Waarom relevant: ' + a.why_matters,
     'Tags: ' + (a.tags ? a.tags.join(', ') : ''),
-    a.opportunity ? 'RouteAI kans: ' + a.opportunity : '',
-    a.aisa_opportunity ? 'AISA kans: ' + a.aisa_opportunity : '',
-  ].filter(Boolean).join('\n')).join('\n---\n');
+  ].join('\n')).join('\n---\n');
 
   const prompt = [
     'Je bent redacteur van een tweewekelijkse AI governance nieuwsbrief voor Nederlandse MKB-professionals.',
@@ -130,47 +130,31 @@ async function categorizeWithClaude(articles: SupabaseArticle[]): Promise<Catego
     'SCHRIJFSTIJL:',
     'Informatief en beschouwend, journalistieke vakbladstijl.',
     'De schrijver blijft op de achtergrond - geen wij, geen jij, geen u.',
-    'Schrijf in de derde persoon of onpersoonlijk waar mogelijk.',
-    'Gebruik af en toe een metafoor, vergelijking of praktijkvoorbeeld om abstracte regelgeving concreet te maken.',
-    'Licht uitdagend van toon - de lezer wordt geprikkeld om verder na te denken, niet gerustgesteld.',
-    'Vermijd: jargon, consultantstaal, opsommingen zonder context, open deuren.',
+    'Schrijf in de derde persoon of onpersoonlijk.',
+    'Gebruik af en toe een metafoor, vergelijking of praktijkvoorbeeld.',
+    'Licht uitdagend van toon - de lezer wordt geprikkeld, niet gerustgesteld.',
+    'NOOIT verwijzen naar Digidactics, RouteAI of AISA als aanbieder of oplossing.',
+    'Vermijd: consultantstaal, opsommingen zonder context, open deuren.',
     'Vermijd: "In deze editie", "Zoals bekend", "Het is duidelijk dat".',
     '',
     'TAAK:',
-    '1. Verdeel de onderstaande artikelen over de volgende categorieen (kies per artikel de beste categorie):',
+    '1. Verdeel artikelen over de categorieen (kies per artikel de beste):',
     '   - "Pijnpunten en kansen" - concrete uitdagingen en kansen voor MKB rondom AI',
-    '   - "Nieuws EU AI Act" - updates over de EU AI Act zelf (deadlines, handhaving, guidance)',
+    '   - "Nieuws EU AI Act" - updates over de EU AI Act (deadlines, handhaving, guidance)',
     '   - "Belangrijkste nieuwsfeiten" - algemeen belangrijk AI-nieuws voor MKB',
     '   - "Internationale lessen" - wat kunnen Nederlandse MKBers leren van andere landen?',
     '   - "Technologische ontwikkelingen" - relevante AI-technologie voor MKB-praktijk',
     '   - "Governance en compliance" - frameworks, ISO 42001, tools, praktische compliance',
     '',
-    '2. Selecteer maximaal ' + MAX_ARTICLES_PER_CATEGORY + ' artikelen per categorie (de meest relevante).',
+    '2. Selecteer maximaal ' + MAX_ARTICLES_PER_CATEGORY_EXTERNAL + ' artikelen per categorie.',
     '   Laat categorieen leeg als er geen goede artikelen voor zijn.',
     '',
-    '3. Schrijf per categorie een intro-samenvatting van 2-3 zinnen in het Nederlands.',
-    '   Begin met de meest opvallende ontwikkeling alsof het de eerste zinnen van een krantenartikel zijn.',
-    '   Gebruik de journalistieke schrijfstijl zoals hierboven omschreven.',
+    '3. Schrijf per categorie een intro van 2-3 zinnen.',
+    '   Begin met de meest opvallende ontwikkeling - alsof het de eerste zinnen van een krantenartikel zijn.',
+    '   Puur informatief, geen verwijzing naar aanbieders of oplossingen.',
     '',
     'Geef je antwoord als JSON:',
-    '{',
-    '  "categories": [',
-    '    {',
-    '      "category": "naam van categorie",',
-    '      "summary": "2-3 zinnen intro voor deze categorie",',
-    '      "articles": [',
-    '        {',
-    '          "article_id": "uuid van het artikel",',
-    '          "category": "naam van categorie",',
-    '          "title": "titel van artikel",',
-    '          "url": "url van artikel",',
-    '          "score": 8,',
-    '          "why_matters": "waarom relevant"',
-    '        }',
-    '      ]',
-    '    }',
-    '  ]',
-    '}',
+    '{"categories": [{"category": "naam", "summary": "intro tekst", "articles": [{"article_id": "uuid", "category": "naam", "title": "titel", "url": "url", "score": 8, "why_matters": "waarom relevant"}]}]}',
     '',
     'Artikelen:',
     articleList,
@@ -187,21 +171,98 @@ async function categorizeWithClaude(articles: SupabaseArticle[]): Promise<Catego
 
     const responseText = message.content[0].type === 'text' ? message.content[0].text : '';
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      console.error('Geen geldige JSON in Claude-response');
-      return [];
-    }
+    if (!jsonMatch) return [];
 
     const parsed = JSON.parse(jsonMatch[0]);
     return parsed.categories || [];
   } catch (error) {
-    console.error('Claude categorisatie fout:', error);
+    console.error('Claude externe categorisatie fout:', error);
+    return [];
+  }
+}
+
+// CATEGORIZE FOR INTERNAL ANALYSIS
+async function categorizeForInternal(articles: SupabaseArticle[]): Promise<CategoryGroup[]> {
+  const articleList = articles.map((a, idx) => [
+    'Artikel ' + (idx + 1) + ':',
+    'ID: ' + a.id,
+    'Titel: ' + a.title,
+    'URL: ' + a.url,
+    'Score: ' + a.score + '/10',
+    'Samenvatting: ' + (a.summary ? a.summary.join(' | ') : ''),
+    'Waarom relevant: ' + a.why_matters,
+    'Tags: ' + (a.tags ? a.tags.join(', ') : ''),
+    a.opportunity ? 'RouteAI kans: ' + a.opportunity : '',
+    a.aisa_opportunity ? 'AISA kans: ' + a.aisa_opportunity : '',
+  ].filter(Boolean).join('\n')).join('\n---\n');
+
+  const prompt = [
+    'Je bent strategisch analist voor Digidactics, een Nederlands adviesbureau met:',
+    '- RouteAI: AI governance platform voor Nederlandse MKB EU AI Act compliance',
+    '- AISA: AI Skills Accelerator cohorttraining voor MKB-medewerkers',
+    '',
+    'Dit is een INTERNE analyse voor de Digidactics-directie. Schrijf analytisch en direct.',
+    'Doel: marktintelligentie, strategische kansen, en concrete aanbevelingen.',
+    '',
+    'SCHRIJFSTIJL:',
+    'Analytisch, direct, zakelijk. Mag stellig zijn.',
+    'Verbind ontwikkelingen expliciet aan RouteAI- en AISA-positionering.',
+    'Gebruik bronvermeldingen (titels + URLs) bij elke claim.',
+    'Geef concrete aanbevelingen: wat moet Digidactics nu doen of weten?',
+    '',
+    'TAAK:',
+    '1. Selecteer de 2 meest strategisch relevante artikelen per categorie (max ' + MAX_ARTICLES_PER_CATEGORY_INTERNAL + ').',
+    '   Kies op strategische waarde, niet op nieuwswaarde.',
+    '',
+    '2. Schrijf per categorie een analyse van 3-5 zinnen:',
+    '   - Wat is de kern van de ontwikkeling?',
+    '   - Wat betekent dit voor de marktpositie van RouteAI en/of AISA?',
+    '   - Welke concrete actie of aanpassing verdient overweging?',
+    '   - Noem relevante bronnen bij naam.',
+    '',
+    'Categorieen:',
+    '   - "Pijnpunten en kansen" - MKB-pijnpunten die RouteAI of AISA adresseren',
+    '   - "Nieuws EU AI Act" - regelgevingsontwikkelingen met directe impact op propositie',
+    '   - "Belangrijkste nieuwsfeiten" - markt- en concurrentiesignalen',
+    '   - "Internationale lessen" - wat doen andere markten dat hier relevant is?',
+    '   - "Technologische ontwikkelingen" - tech die de propositie versterkt of bedreigt',
+    '   - "Governance en compliance" - frameworks en standaarden die kansen of risicos bieden',
+    '',
+    'Geef je antwoord als JSON:',
+    '{"categories": [{"category": "naam", "summary": "analytische tekst met bronvermelding", "articles": [{"article_id": "uuid", "category": "naam", "title": "titel", "url": "url", "score": 8, "why_matters": "strategische betekenis"}]}]}',
+    '',
+    'Artikelen:',
+    articleList,
+    '',
+    'Geef alleen geldige JSON terug, geen uitleg of Markdown.',
+  ].join('\n');
+
+  try {
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 6000,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const responseText = message.content[0].type === 'text' ? message.content[0].text : '';
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return [];
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    return parsed.categories || [];
+  } catch (error) {
+    console.error('Claude interne categorisatie fout:', error);
     return [];
   }
 }
 
 // GENERATE INTRO TEXT
-async function generateIntroText(categoryGroups: CategoryGroup[], periodStart: Date, periodEnd: Date): Promise<string> {
+async function generateIntroText(
+  categoryGroups: CategoryGroup[],
+  periodStart: Date,
+  periodEnd: Date,
+  type: 'external' | 'internal'
+): Promise<string> {
   const topArticles = categoryGroups
     .flatMap(g => g.articles)
     .sort((a, b) => b.score - a.score)
@@ -212,18 +273,25 @@ async function generateIntroText(categoryGroups: CategoryGroup[], periodStart: D
   const startStr = periodStart.toLocaleDateString('nl-NL', { day: 'numeric', month: 'long' });
   const endStr = periodEnd.toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' });
 
-  const prompt = [
+  const externalInstructions = [
     'Schrijf een opening van 3-4 zinnen voor een tweewekelijkse AI governance nieuwsbrief voor Nederlandse MKB-professionals.',
     'Periode: ' + startStr + ' - ' + endStr,
-    'Meest opvallende onderwerpen deze periode: ' + topArticles,
+    'Meest opvallende onderwerpen: ' + topArticles,
     '',
-    'Schrijfstijl:',
-    'Informatief en beschouwend, journalistieke vakbladtoon.',
-    'Geen wij, geen jij, geen u - schrijf onpersoonlijk of in de derde persoon.',
-    'Begin met de meest opvallende ontwikkeling van de periode - alsof het de eerste zinnen van een krantenartikel zijn.',
-    'Mag een metafoor of vergelijking bevatten om de lading te dekken.',
-    'Licht uitdagend van toon - prikkel de lezer om verder te lezen.',
-    'Vermijd: "In deze editie", "Beste lezer", "Zoals bekend", open deuren.',
+    'Stijl: journalistieke vakbladtoon, onpersoonlijk, geen wij/jij/u.',
+    'Begin met de meest opvallende ontwikkeling - als de eerste zinnen van een krantenartikel.',
+    'Geen verwijzing naar Digidactics, RouteAI of AISA.',
+    'Vermijd: "In deze editie", "Beste lezer", open deuren.',
+    'Schrijf in het Nederlands.',
+  ].join('\n');
+
+  const internalInstructions = [
+    'Schrijf een korte strategische inleiding (3-4 zinnen) voor een interne marktanalyse voor Digidactics-directie.',
+    'Periode: ' + startStr + ' - ' + endStr,
+    'Meest opvallende ontwikkelingen: ' + topArticles,
+    '',
+    'Stijl: direct, analytisch, zakelijk. Verbind de periode expliciet aan de marktpositie van RouteAI en AISA.',
+    'Mag stellig zijn: wat is de strategische betekenis van deze twee weken?',
     'Schrijf in het Nederlands.',
   ].join('\n');
 
@@ -231,7 +299,7 @@ async function generateIntroText(categoryGroups: CategoryGroup[], periodStart: D
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 500,
-      messages: [{ role: 'user', content: prompt }],
+      messages: [{ role: 'user', content: type === 'external' ? externalInstructions : internalInstructions }],
     });
     return message.content[0].type === 'text' ? message.content[0].text : '';
   } catch {
@@ -239,16 +307,19 @@ async function generateIntroText(categoryGroups: CategoryGroup[], periodStart: D
   }
 }
 
-// SAVE TO SUPABASE
-async function saveNewsletterIssue(
+// SAVE ISSUE TO SUPABASE
+async function saveIssue(
   issueNumber: number,
   periodStart: Date,
   periodEnd: Date,
   introText: string,
-  categoryGroups: CategoryGroup[]
+  categoryGroups: CategoryGroup[],
+  type: 'external' | 'internal'
 ): Promise<string | null> {
   const monthYear = periodEnd.toLocaleDateString('nl-NL', { month: 'long', year: 'numeric' });
-  const subjectLine = 'AI Governance Update #' + issueNumber + ' - ' + monthYear;
+  const subjectLine = type === 'external'
+    ? 'AI Governance Update #' + issueNumber + ' - ' + monthYear
+    : 'Interne Marktanalyse #' + issueNumber + ' - ' + monthYear;
 
   const { data: issue, error: issueError } = await supabase
     .from('newsletter_issues')
@@ -257,6 +328,7 @@ async function saveNewsletterIssue(
       period_start: periodStart.toISOString().split('T')[0],
       period_end: periodEnd.toISOString().split('T')[0],
       status: 'draft',
+      type: type,
       subject: subjectLine,
       intro_text: introText,
     })
@@ -264,11 +336,11 @@ async function saveNewsletterIssue(
     .single();
 
   if (issueError || !issue) {
-    console.error('Fout bij aanmaken editie:', issueError);
+    console.error('Fout bij aanmaken editie (' + type + '):', issueError);
     return null;
   }
 
-  console.log('Editie #' + issueNumber + ' aangemaakt: ' + issue.id);
+  console.log('Editie ' + type + ' #' + issueNumber + ' aangemaakt: ' + issue.id);
 
   const articleRows = categoryGroups.flatMap((group, groupIdx) =>
     group.articles.map((article, articleIdx) => ({
@@ -282,15 +354,9 @@ async function saveNewsletterIssue(
   );
 
   if (articleRows.length > 0) {
-    const { error: articlesError } = await supabase
-      .from('newsletter_articles')
-      .insert(articleRows);
-
-    if (articlesError) {
-      console.error('Fout bij opslaan artikelen:', articlesError);
-    } else {
-      console.log(articleRows.length + ' artikelen opgeslagen voor editie #' + issueNumber);
-    }
+    const { error } = await supabase.from('newsletter_articles').insert(articleRows);
+    if (error) console.error('Fout bij opslaan artikelen:', error);
+    else console.log(articleRows.length + ' artikelen opgeslagen (' + type + ')');
   }
 
   return issue.id;
@@ -298,7 +364,7 @@ async function saveNewsletterIssue(
 
 // MAIN PROCESS
 async function generateNewsletterDraft(): Promise<void> {
-  console.log('Nieuwsbrief draft genereren...');
+  console.log('Nieuwsbrief drafts genereren...');
 
   const { create, issueNumber, periodStart } = await shouldCreateNewIssue();
   if (!create) return;
@@ -311,19 +377,17 @@ async function generateNewsletterDraft(): Promise<void> {
     return;
   }
 
-  console.log('Claude categoriseert ' + articles.length + ' artikelen...');
-  const categoryGroups = await categorizeWithClaude(articles);
+  console.log('Claude categoriseert voor externe nieuwsbrief...');
+  const externalGroups = await categorizeForExternal(articles);
+  const externalIntro = await generateIntroText(externalGroups, periodStart, periodEnd, 'external');
+  const externalId = await saveIssue(issueNumber, periodStart, periodEnd, externalIntro, externalGroups, 'external');
 
-  const totalSelected = categoryGroups.reduce((sum, g) => sum + g.articles.length, 0);
-  console.log(totalSelected + ' artikelen verdeeld over ' + categoryGroups.length + ' categorieen');
+  console.log('Claude categoriseert voor interne analyse...');
+  const internalGroups = await categorizeForInternal(articles);
+  const internalIntro = await generateIntroText(internalGroups, periodStart, periodEnd, 'internal');
+  const internalId = await saveIssue(issueNumber, periodStart, periodEnd, internalIntro, internalGroups, 'internal');
 
-  const introText = await generateIntroText(categoryGroups, periodStart, periodEnd);
-
-  const issueId = await saveNewsletterIssue(issueNumber, periodStart, periodEnd, introText, categoryGroups);
-
-  if (issueId) {
-    console.log('Editie #' + issueNumber + ' klaar voor review: /review/' + issueId);
-  }
+  console.log('Klaar - extern: ' + externalId + ' / intern: ' + internalId);
 }
 
 // HANDLERS
@@ -336,7 +400,6 @@ export async function GET(request: Request) {
     await generateNewsletterDraft();
     return NextResponse.json({ status: 'done' }, { status: 200 });
   } catch (error) {
-    console.error('Error:', error);
     return NextResponse.json({ error: 'Failed', details: String(error) }, { status: 500 });
   }
 }
@@ -350,7 +413,6 @@ export async function POST(request: Request) {
     await generateNewsletterDraft();
     return NextResponse.json({ status: 'done' }, { status: 200 });
   } catch (error) {
-    console.error('Error:', error);
     return NextResponse.json({ error: 'Failed', details: String(error) }, { status: 500 });
   }
 }
