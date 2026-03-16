@@ -72,6 +72,25 @@ function buildInternalHtml(issue: any, articles: any[]): string {
   const periodStart = new Date(issue.period_start).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long' });
   const periodEnd = new Date(issue.period_end).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' });
 
+  // Bouw lookup van article_id -> {title, url}
+  const articleLookup: Record<string, { title: string; url: string }> = {};
+  articles.forEach((a: any) => {
+    articleLookup[a.article_id] = { title: a.title, url: a.url };
+  });
+
+  // Vervang [REF:uuid] markers met inline HTML-links
+  function resolveRefs(text: string, catArticles: any[]): string {
+    return text.replace(/\[REF:([a-f0-9-]+)\]/g, (_match: string, id: string) => {
+      const art = articleLookup[id] || catArticles.find((a: any) => a.article_id === id);
+      if (!art) return '';
+      const title = art.title || 'bron';
+      const url = art.url || '#';
+      // Gebruik een korte ankertekst: publicatienaam of eerste 4 woorden van titel
+      const anchor = title.split(' ').slice(0, 4).join(' ');
+      return '<a href="' + url + '" style="color: #2b6cb0; text-decoration: underline; font-weight: 500;">' + anchor + '</a>';
+    });
+  }
+
   let html = '<div style="font-family: Georgia, serif; max-width: 680px; margin: 0 auto; padding: 32px; color: #1a202c; background: #ffffff;">';
 
   // Header
@@ -92,46 +111,32 @@ function buildInternalHtml(issue: any, articles: any[]): string {
 
     if (catArticles.length === 0) return;
 
-    const summary = catArticles[0]?.category_summary;
+    const rawSummary = catArticles[0]?.category_summary || '';
+    const resolvedSummary = resolveRefs(rawSummary, catArticles);
 
     html += '<div style="margin-bottom: 40px;">';
 
     // Sectietitel
     html += '<h2 style="font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: #4299e1; font-family: Arial, sans-serif; margin: 0 0 12px 0; font-weight: 600;">' + cat + '</h2>';
 
-    // Lopende tekst (HTML proza van Claude)
-    if (summary) {
-      html += '<div style="font-size: 15px; line-height: 1.85; color: #2d3748;">';
-      // summary kan HTML-ankers bevatten van Claude
-      // We stijlen alle links in de prose
-      const styledSummary = summary
-        .replace(/<a href=/g, '<a style="color: #2b6cb0; text-decoration: underline;" href=')
-        .replace(/<p>/g, '<p style="margin: 0 0 14px 0;">');
-      html += styledSummary;
-      html += '</div>';
-    }
+    // Lopende tekst met opgeloste bronlinks
+    html += '<p style="font-size: 15px; line-height: 1.85; color: #2d3748; margin: 0 0 16px 0;">' + resolvedSummary + '</p>';
 
-    // Bronnenlijst onderaan sectie (compact, als referentie)
-    if (catArticles.length > 0) {
-      html += '<div style="margin-top: 12px; padding: 10px 14px; background: #f7fafc; border-radius: 4px; font-family: Arial, sans-serif;">';
-      html += '<p style="margin: 0 0 6px 0; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: #a0aec0;">Bronnen</p>';
-      catArticles.forEach((a: any) => {
-        html += '<p style="margin: 0 0 4px 0; font-size: 12px; color: #4a5568;">';
-        html += '<a href="' + a.url + '" style="color: #4299e1; text-decoration: none;">' + a.title + '</a>';
-        html += ' <span style="color: #a0aec0;">&middot; score ' + a.score + '/10</span>';
-        html += '</p>';
-      });
-      html += '</div>';
-    }
-
+    // Bronnenlijst onderaan sectie
+    html += '<div style="margin-top: 12px; padding: 10px 14px; background: #f7fafc; border-radius: 4px; font-family: Arial, sans-serif;">';
+    html += '<p style="margin: 0 0 6px 0; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: #a0aec0;">Bronnen</p>';
+    catArticles.forEach((a: any) => {
+      html += '<p style="margin: 0 0 4px 0; font-size: 12px; color: #4a5568;">';
+      html += '<a href="' + a.url + '" style="color: #4299e1; text-decoration: none;">' + a.title + '</a>';
+      html += ' <span style="color: #a0aec0;">&middot; ' + a.score + '/10</span>';
+      html += '</p>';
+    });
     html += '</div>';
-
-    // Scheiding tussen secties
+    html += '</div>';
     html += '<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 0 0 40px 0;">';
   });
 
-  // Footer
-  html += '<p style="font-size: 11px; color: #a0aec0; font-family: Arial, sans-serif; line-height: 1.6;">Digidactics &middot; Interne Marktanalyse &middot; Vertrouwelijk</p>';
+  html += '<p style="font-size: 11px; color: #a0aec0; font-family: Arial, sans-serif;">Digidactics &middot; Interne Marktanalyse &middot; Vertrouwelijk</p>';
   html += '</div>';
 
   return html;

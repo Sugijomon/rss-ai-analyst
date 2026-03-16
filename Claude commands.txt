@@ -2,13 +2,9 @@ Stap 1: Pushen naar GitHub
 
 C:\Users\Gebruiker\rss-ai-analyst
 git add app/api/cron/newsletter-draft/route.ts
-git commit -m "feat: newsletter van tweewekelijks naar wekelijks"
+git commit -m "feat: newsletter update naar blog & wekelijks"
 git push
 
 Stap 2: Newsletter nu direct genereren (handmatig triggeren) in powershell
 
-Invoke-WebRequest `
-  -Uri "https://rss-ai-analyst.vercel.app/api/cron/newsletter-draft" `
-  -Method POST `
-  -Headers @{"Authorization"="Bearer vK9mR3pL7sN2wT8xY4aB6cD1eF5gH0iJ3kM7nP2qZ9r"} `
-  -UseBasicParsing
+Invoke-WebRequest -Uri "https://rss-ai-analyst.vercel.app/api/cron/newsletter-draft" -Method GET -Headers @{"Authorization" = "Bearer vK9mR3pL7sN2wT8xY4aB6cD1eF5gH0iJ3kM7nP2qZ9r"} -UseBasicParsing

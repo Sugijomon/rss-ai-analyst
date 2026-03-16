@@ -16,7 +16,7 @@ export async function GET(request: Request) {
   const { data: issues, error } = await supabase
     .from('newsletter_issues')
     .select(`
-      id, issue_number, period_start, period_end,
+      id, issue_number, type, period_start, period_end,
       status, subject, intro_text, sent_at,
       newsletter_articles (
         id, article_id, category, category_summary,

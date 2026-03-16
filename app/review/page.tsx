@@ -126,6 +126,9 @@ function IssueList({ issues, onSelect }: { issues: Issue[]; onSelect: (i: Issue)
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="flex items-center gap-3">
+                      <span className="font-semibold text-gray-900">
+                        Editie #{issue.issue_number} — {issue.type === 'internal' ? 'Intern' : 'Extern'}
+                      </span>
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[issue.status]}`}>
                         {STATUS_LABELS[issue.status]}
                       </span>
@@ -351,7 +354,14 @@ function IssueEditor({
                 </div>
                 {summary && (
                   <div className="px-6 py-3 bg-blue-50 border-b border-blue-100">
-                    <p className="text-sm text-blue-800 italic">{summary}</p>
+                    {issue.type === 'internal' ? (
+  <div
+    className="text-sm text-blue-900 prose prose-sm max-w-none"
+    dangerouslySetInnerHTML={{ __html: summary }}
+  />
+) : (
+  <p className="text-sm text-blue-800 italic">{summary}</p>
+)}
                   </div>
                 )}
                 <div className="divide-y divide-gray-100">
