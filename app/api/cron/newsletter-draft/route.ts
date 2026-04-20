@@ -27,6 +27,7 @@ const ISSUE_INTERVAL_DAYS = 14;
 const MAX_ARTICLES_PER_CATEGORY_EXTERNAL = 4;
 const MAX_ARTICLES_PER_CATEGORY_INTERNAL = 3;
 const MAX_TOTAL_ARTICLES = 20;
+const MAX_CLAUDE_INPUT_ARTICLES = 40;
 
 interface SupabaseArticle {
   id: string;
@@ -99,7 +100,7 @@ async function fetchArticlesForPeriod(periodStart: Date): Promise<SupabaseArticl
     .gte('run_date', startDate)
     .gte('score', MIN_SCORE)
     .order('score', { ascending: false })
-    .limit(MAX_TOTAL_ARTICLES * 3);
+    .limit(MAX_CLAUDE_INPUT_ARTICLES);
 
   if (error) {
     console.error('Supabase fetch error:', error);
@@ -126,6 +127,9 @@ async function categorizeForExternal(articles: SupabaseArticle[]): Promise<Categ
   const prompt = [
     'Je bent redacteur van een tweewekelijkse AI governance nieuwsbrief voor Nederlandse MKB-professionals.',
     'De nieuwsbrief is van Digidactics en gericht op beslissers bij MKB-bedrijven die te maken hebben met de EU AI Act.',
+    '',
+    'BELANGRIJK: Gebruik UITSLUITEND de exacte UUIDs die bij elk artikel staan vermeld als "ID: ...".',
+    'Verzin GEEN nieuwe UUIDs. Kopieer de ID letterlijk uit de invoer.',
     '',
     'SCHRIJFSTIJL:',
     'Informatief en beschouwend, journalistieke vakbladstijl.',
@@ -161,13 +165,16 @@ async function categorizeForExternal(articles: SupabaseArticle[]): Promise<Categ
   try {
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 6000,
+      max_tokens: 10000,
       messages: [{ role: 'user', content: prompt }],
     });
 
     const responseText = message.content[0].type === 'text' ? message.content[0].text : '';
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return [];
+    if (!jsonMatch) {
+      console.error('Geen geldige JSON in externe Claude-response');
+      return [];
+    }
 
     const parsed = JSON.parse(jsonMatch[0]);
     return parsed.categories || [];
@@ -177,7 +184,7 @@ async function categorizeForExternal(articles: SupabaseArticle[]): Promise<Categ
   }
 }
 
-// CATEGORIZE FOR INTERNAL ANALYSIS — plain text with [REF:id|anchor] markers
+// CATEGORIZE FOR INTERNAL ANALYSIS
 async function categorizeForInternal(articles: SupabaseArticle[]): Promise<CategoryGroup[]> {
   const articleList = articles.map((a, idx) => [
     'Artikel ' + (idx + 1) + ':',
@@ -197,6 +204,9 @@ async function categorizeForInternal(articles: SupabaseArticle[]): Promise<Categ
     '- RouteAI: AI governance platform voor Nederlandse MKB EU AI Act compliance',
     '- AISA: AI Skills Accelerator cohorttraining voor MKB-medewerkers',
     '',
+    'BELANGRIJK: Gebruik UITSLUITEND de exacte UUIDs die bij elk artikel staan vermeld als "ID: ...".',
+    'Verzin GEEN nieuwe UUIDs. Kopieer de ID letterlijk uit de invoer.',
+    '',
     'Schrijf een INTERNE marktanalyse in blogvorm voor de Digidactics-directie.',
     '',
     'SCHRIJFSTIJL:',
@@ -207,7 +217,6 @@ async function categorizeForInternal(articles: SupabaseArticle[]): Promise<Categ
     'Voorbeelden:',
     '  "Meer dan 80 procent van grote bedrijven gebruikt AI zonder governance [REF:abc-123|onderzoek van Nutanix]."',
     '  "De EU AI Act nadert haar eerste handhavingsmoment [REF:def-456|analyse van Eversheds Sutherland]."',
-    '  "Shadow AI groeit sneller dan beleid bijhoudt [REF:ghi-789|MIT Technology Review]."',
     'Verbind ontwikkelingen expliciet aan RouteAI en AISA waar relevant.',
     'Geef concrete strategische observaties.',
     '',
@@ -239,7 +248,7 @@ async function categorizeForInternal(articles: SupabaseArticle[]): Promise<Categ
   try {
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 6000,
+      max_tokens: 10000,
       messages: [{ role: 'user', content: prompt }],
     });
 
@@ -316,7 +325,8 @@ async function saveIssue(
   periodEnd: Date,
   introText: string,
   categoryGroups: CategoryGroup[],
-  type: 'external' | 'internal'
+  type: 'external' | 'internal',
+  validArticleIds: Set<string>
 ): Promise<string | null> {
   const monthYear = periodEnd.toLocaleDateString('nl-NL', { month: 'long', year: 'numeric' });
   const subjectLine = type === 'external'
@@ -345,20 +355,33 @@ async function saveIssue(
   console.log('Editie ' + type + ' #' + issueNumber + ' aangemaakt: ' + issue.id);
 
   const articleRows = categoryGroups.flatMap((group, groupIdx) =>
-    group.articles.map((article, articleIdx) => ({
-      issue_id: issue.id,
-      article_id: article.article_id,
-      category: group.category,
-      category_summary: group.summary,
-      display_order: groupIdx * 10 + articleIdx,
-      included: true,
-    }))
+    group.articles
+      .filter(article => {
+        const valid = validArticleIds.has(article.article_id);
+        if (!valid) {
+          console.warn('Onbekend article_id gefilterd: ' + article.article_id + ' (' + article.title + ')');
+        }
+        return valid;
+      })
+      .map((article, articleIdx) => ({
+        issue_id: issue.id,
+        article_id: article.article_id,
+        category: group.category,
+        category_summary: group.summary,
+        display_order: groupIdx * 10 + articleIdx,
+        included: true,
+      }))
   );
 
   if (articleRows.length > 0) {
     const { error } = await supabase.from('newsletter_articles').insert(articleRows);
-    if (error) console.error('Fout bij opslaan artikelen:', error);
-    else console.log(articleRows.length + ' artikelen opgeslagen (' + type + ')');
+    if (error) {
+      console.error('Fout bij opslaan artikelen:', error);
+    } else {
+      console.log(articleRows.length + ' artikelen opgeslagen (' + type + ')');
+    }
+  } else {
+    console.warn('Geen geldige artikelen om op te slaan voor editie ' + type + ' #' + issueNumber);
   }
 
   return issue.id;
@@ -379,15 +402,18 @@ async function generateNewsletterDraft(): Promise<void> {
     return;
   }
 
+  const validArticleIds = new Set(articles.map(a => a.id));
+  console.log('Geldige article IDs geladen: ' + validArticleIds.size);
+
   console.log('Claude categoriseert voor externe nieuwsbrief...');
   const externalGroups = await categorizeForExternal(articles);
   const externalIntro = await generateIntroText(externalGroups, periodStart, periodEnd, 'external');
-  const externalId = await saveIssue(issueNumber, periodStart, periodEnd, externalIntro, externalGroups, 'external');
+  const externalId = await saveIssue(issueNumber, periodStart, periodEnd, externalIntro, externalGroups, 'external', validArticleIds);
 
   console.log('Claude categoriseert voor interne analyse...');
   const internalGroups = await categorizeForInternal(articles);
   const internalIntro = await generateIntroText(internalGroups, periodStart, periodEnd, 'internal');
-  const internalId = await saveIssue(issueNumber, periodStart, periodEnd, internalIntro, internalGroups, 'internal');
+  const internalId = await saveIssue(issueNumber, periodStart, periodEnd, internalIntro, internalGroups, 'internal', validArticleIds);
 
   console.log('Klaar - extern: ' + externalId + ' / intern: ' + internalId);
 }
