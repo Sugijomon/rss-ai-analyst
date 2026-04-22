@@ -23,7 +23,7 @@ const CATEGORIES = [
 type Category = typeof CATEGORIES[number];
 
 const MIN_SCORE = 7;
-const ISSUE_INTERVAL_DAYS = 14;
+const ISSUE_INTERVAL_DAYS = 7;
 const MAX_ARTICLES_PER_CATEGORY_EXTERNAL = 4;
 const MAX_ARTICLES_PER_CATEGORY_INTERNAL = 3;
 const MAX_TOTAL_ARTICLES = 20;
@@ -125,7 +125,7 @@ async function categorizeForExternal(articles: SupabaseArticle[]): Promise<Categ
   ].join('\n')).join('\n---\n');
 
   const prompt = [
-    'Je bent redacteur van een tweewekelijkse AI governance nieuwsbrief voor Nederlandse MKB-professionals.',
+    'Je bent redacteur van een wekelijkse AI governance nieuwsbrief voor Nederlandse MKB-professionals.',
     'De nieuwsbrief is van Digidactics en gericht op beslissers bij MKB-bedrijven die te maken hebben met de EU AI Act.',
     '',
     'BELANGRIJK: Gebruik UITSLUITEND de exacte UUIDs die bij elk artikel staan vermeld als "ID: ...".',
@@ -217,6 +217,7 @@ async function categorizeForInternal(articles: SupabaseArticle[]): Promise<Categ
     'Voorbeelden:',
     '  "Meer dan 80 procent van grote bedrijven gebruikt AI zonder governance [REF:abc-123|onderzoek van Nutanix]."',
     '  "De EU AI Act nadert haar eerste handhavingsmoment [REF:def-456|analyse van Eversheds Sutherland]."',
+    '  "Shadow AI groeit sneller dan beleid bijhoudt [REF:ghi-789|MIT Technology Review]."',
     'Verbind ontwikkelingen expliciet aan RouteAI en AISA waar relevant.',
     'Geef concrete strategische observaties.',
     '',
@@ -285,7 +286,7 @@ async function generateIntroText(
   const endStr = periodEnd.toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' });
 
   const externalInstructions = [
-    'Schrijf een opening van 3-4 zinnen voor een tweewekelijkse AI governance nieuwsbrief voor Nederlandse MKB-professionals.',
+    'Schrijf een opening van 3-4 zinnen voor een wekelijkse AI governance nieuwsbrief voor Nederlandse MKB-professionals.',
     'Periode: ' + startStr + ' - ' + endStr,
     'Meest opvallende onderwerpen: ' + topArticles,
     '',
