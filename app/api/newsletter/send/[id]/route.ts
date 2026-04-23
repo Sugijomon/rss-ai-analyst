@@ -11,12 +11,13 @@ function checkAuth(request: Request) {
 }
 
 const CATEGORIES = [
-  'Pijnpunten en kansen',
+  'Knelpunten en kansen',
   'Nieuws EU AI Act',
   'Belangrijkste nieuwsfeiten',
   'Internationale lessen',
   'Technologische ontwikkelingen',
   'Governance en compliance',
+  'Lezenswaardig onderzoek',
 ];
 
 // EXTERNAL — nieuwsbrief opmaak (artikellijst per categorie)
