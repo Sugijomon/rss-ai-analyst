@@ -337,7 +337,8 @@ async function saveIssue(
   introText: string,
   categoryGroups: CategoryGroup[],
   type: 'external' | 'internal',
-  validArticleIds: Set<string>
+  validArticleIds: Set<string>,
+  articles: SupabaseArticle[]
 ): Promise<string | null> {
   const monthYear = periodEnd.toLocaleDateString('nl-NL', { month: 'long', year: 'numeric' });
   const subjectLine = type === 'external'
@@ -445,12 +446,12 @@ async function generateNewsletterDraft(): Promise<void> {
   console.log('Claude categoriseert voor externe nieuwsbrief...');
   const externalGroups = await categorizeForExternal(articles);
   const externalIntro = await generateIntroText(externalGroups, periodStart, periodEnd, 'external');
-  const externalId = await saveIssue(issueNumber, periodStart, periodEnd, externalIntro, externalGroups, 'external', validArticleIds);
+  const externalId = await saveIssue(issueNumber, periodStart, periodEnd, externalIntro, externalGroups, 'external', validArticleIds, articles);
 
   console.log('Claude categoriseert voor interne analyse...');
   const internalGroups = await categorizeForInternal(articles);
   const internalIntro = await generateIntroText(internalGroups, periodStart, periodEnd, 'internal');
-  const internalId = await saveIssue(issueNumber, periodStart, periodEnd, internalIntro, internalGroups, 'internal', validArticleIds);
+  const internalId = await saveIssue(issueNumber, periodStart, periodEnd, internalIntro, internalGroups, 'internal', validArticleIds, articles);
 
   console.log('Klaar - extern: ' + externalId + ' / intern: ' + internalId);
 }
