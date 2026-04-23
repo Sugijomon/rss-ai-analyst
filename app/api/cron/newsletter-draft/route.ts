@@ -12,12 +12,13 @@ const supabase = createClient(
 );
 
 const CATEGORIES = [
-  'Pijnpunten en kansen',
+  'Knelpunten en kansen',
   'Nieuws EU AI Act',
   'Belangrijkste nieuwsfeiten',
   'Internationale lessen',
   'Technologische ontwikkelingen',
   'Governance en compliance',
+  'Lezenswaardig onderzoek',
 ] as const;
 
 type Category = typeof CATEGORIES[number];
@@ -39,6 +40,7 @@ interface SupabaseArticle {
   tags: string[];
   opportunity: string | null;
   aisa_opportunity: string | null;
+  content_type: string | null;
   run_date: string;
 }
 
@@ -96,9 +98,9 @@ async function fetchArticlesForPeriod(periodStart: Date): Promise<SupabaseArticl
 
   const { data, error } = await supabase
     .from('articles')
-    .select('id, title, url, score, summary, why_matters, tags, opportunity, aisa_opportunity, run_date')
+    .select('id, title, url, score, summary, why_matters, tags, opportunity, aisa_opportunity, content_type, run_date')
     .gte('run_date', startDate)
-    .gte('score', MIN_SCORE)
+    .or('score.gte.' + MIN_SCORE + ',and(content_type.eq.rapport,score.gte.6)')
     .order('score', { ascending: false })
     .limit(MAX_CLAUDE_INPUT_ARTICLES);
 
@@ -119,6 +121,7 @@ async function categorizeForExternal(articles: SupabaseArticle[]): Promise<Categ
     'Titel: ' + a.title,
     'URL: ' + a.url,
     'Score: ' + a.score + '/10',
+    'Type: ' + (a.content_type || 'nieuws'),
     'Samenvatting: ' + (a.summary ? a.summary.join(' | ') : ''),
     'Waarom relevant: ' + a.why_matters,
     'Tags: ' + (a.tags ? a.tags.join(', ') : ''),
@@ -143,12 +146,13 @@ async function categorizeForExternal(articles: SupabaseArticle[]): Promise<Categ
     '',
     'TAAK:',
     '1. Verdeel artikelen over de categorieen:',
-    '   - "Pijnpunten en kansen"',
+    '   - "Knelpunten en kansen"',
     '   - "Nieuws EU AI Act"',
     '   - "Belangrijkste nieuwsfeiten"',
     '   - "Internationale lessen"',
     '   - "Technologische ontwikkelingen"',
     '   - "Governance en compliance"',
+    '   - "Lezenswaardig onderzoek" (gebruik deze categorie UITSLUITEND voor rapporten, whitepapers en onderzoekspublicaties met tag Rapport; maximaal 3 stuks)',
     '',
     '2. Selecteer maximaal ' + MAX_ARTICLES_PER_CATEGORY_EXTERNAL + ' artikelen per categorie.',
     '3. Schrijf per categorie een intro van 2-3 zinnen, journalistieke toon, puur informatief.',
@@ -192,6 +196,7 @@ async function categorizeForInternal(articles: SupabaseArticle[]): Promise<Categ
     'Titel: ' + a.title,
     'URL: ' + a.url,
     'Score: ' + a.score + '/10',
+    'Type: ' + (a.content_type || 'nieuws'),
     'Samenvatting: ' + (a.summary ? a.summary.join(' | ') : ''),
     'Waarom relevant: ' + a.why_matters,
     'Tags: ' + (a.tags ? a.tags.join(', ') : ''),
@@ -230,12 +235,13 @@ async function categorizeForInternal(articles: SupabaseArticle[]): Promise<Categ
     '3. Gebruik [REF:artikel_id|ankertekst] om bronnen in de tekst te verwerken.',
     '',
     'Categorieen:',
-    '   - "Pijnpunten en kansen"',
+    '   - "Knelpunten en kansen"',
     '   - "Nieuws EU AI Act"',
     '   - "Belangrijkste nieuwsfeiten"',
     '   - "Internationale lessen"',
     '   - "Technologische ontwikkelingen"',
     '   - "Governance en compliance"',
+    '   - "Lezenswaardig onderzoek" (gebruik deze categorie UITSLUITEND voor rapporten en whitepapers met tag Rapport; maximaal 3 stuks)',
     '',
     'Geef je antwoord als JSON (alleen gewone tekst in summary, geen HTML of aanhalingstekens):',
     '{"categories": [{"category": "naam", "summary": "Lopende tekst met bron [REF:uuid|ankertekst] verwerkt.", "articles": [{"article_id": "uuid", "category": "naam", "title": "titel", "url": "url", "score": 8, "why_matters": "strategische betekenis"}]}]}',
