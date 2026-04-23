@@ -64,7 +64,38 @@ const RSS_FEEDS_AISA = [
   'https://www.google.com/alerts/feeds/09449303513221250695/831771200614974644',
 ];
 
-const RSS_FEEDS = [...RSS_FEEDS_RAI, ...RSS_FEEDS_AISA];
+// RSS FEEDS — Rapporten & Onderzoek
+const RSS_FEEDS_RAPPORTEN = [
+  // Google Alerts — rapporten van consultancies en NL/EU bronnen
+  'https://www.google.com/alerts/feeds/09449303513221250695/11020912532644878384',
+  'https://www.google.com/alerts/feeds/09449303513221250695/9447431379538733276',
+  'https://www.google.com/alerts/feeds/09449303513221250695/7579506280036186973',
+  'https://www.google.com/alerts/feeds/09449303513221250695/9792893812522834631',
+  'https://www.google.com/alerts/feeds/09449303513221250695/14534094429917281865',
+  'https://www.google.com/alerts/feeds/09449303513221250695/7165356540150727077',
+  'https://www.google.com/alerts/feeds/09449303513221250695/11467018644135564915',
+  'https://www.google.com/alerts/feeds/09449303513221250695/8230374117749793457',
+  'https://www.google.com/alerts/feeds/09449303513221250695/8061218653018401488',
+  'https://www.google.com/alerts/feeds/09449303513221250695/12265904741182742856',
+  'https://www.google.com/alerts/feeds/09449303513221250695/4953389541249954681',
+  'https://www.google.com/alerts/feeds/09449303513221250695/16279712458524784408',
+  'https://www.google.com/alerts/feeds/09449303513221250695/7022290479762771039',
+  // Directe RSS — NL onderzoeksinstellingen
+  'https://www.ser.nl/nl/rss',
+  'https://www.rathenau.nl/nl/rss.xml',
+  'https://www.cbs.nl/nl-nl/rss/longread',
+  'https://www.cpb.nl/rss.xml',
+  // Directe RSS — Europese instellingen
+  'https://www.cedefop.europa.eu/en/rss.xml',
+  'https://www.eurofound.europa.eu/rss.xml',
+  // Directe RSS — Internationale consultancies en think tanks
+  'https://www.mckinsey.com/Insights/rss.aspx',
+  'https://sloanreview.mit.edu/feed/',
+  'https://agenda.weforum.org/feed/',
+  'https://hai.stanford.edu/news/rss.xml',
+];
+
+const RSS_FEEDS = [...RSS_FEEDS_RAI, ...RSS_FEEDS_AISA, ...RSS_FEEDS_RAPPORTEN];
 
 const CONFIG = {
   maxArticlesPerFeed: 3,
@@ -83,6 +114,7 @@ interface Article {
 
 interface AnalyzedArticle {
   score: number;
+  contentType: 'nieuws' | 'rapport' | 'analyse' | 'regelgeving';
   title: string;
   summary: string[];
   whyMatters: string;
@@ -137,55 +169,90 @@ async function analyzeWithClaude(articles: Article[]): Promise<AnalyzedArticle[]
   for (let i = 0; i < articles.length; i += batchSize) {
     const batch = articles.slice(i, i + batchSize);
 
-    const prompt = [
-      'Je bent Intelligence Analist voor Digidactics, een Nederlands adviesbureau met twee producten:',
-      '- RouteAI: AI governance platform voor Nederlandse MKB-bedrijven (EU AI Act compliance)',
-      '- AISA: AI Skills Accelerator — cohorttraining voor medewerkers van Nederlandse MKB-bedrijven',
-      '',
-      'BELANGRIJK: Schrijf ALLE output in het Nederlands, ongeacht de taal van het bronartikel.',
-      '',
-      'FOCUS OP:',
-      '- EU AI Act implementatie, deadlines, handhavingsupdates',
-      '- ISO/IEC 42001 & 42005 certificeringsontwikkelingen',
-      '- NIST AI RMF updates',
-      '- AI risico governance frameworks',
-      '- Nederlandse/Europese MKB AI-adoptie en compliance',
-      '- AI-geletterdheid, bijscholing en trainingsbehoeften',
-      '- Handhavingsacties of boetes door toezichthouders',
-      '- Shadow AI en beheer van AI-tools op de werkplek',
-      '- DPO- en juridisch perspectief op AI Act-compliance',
-      '',
-      'NEGEER:',
-      '- Uitsluitend Amerikaans beleid (tenzij direct relevant voor EU)',
-      '- Algemene AI-productlanceringen zonder governance-hoek',
-      '- Hype, marketing, persberichten',
-      '- Consumenten-AI apps, AI kunst, entertainment',
-      '',
-      'Voor elk artikel:',
-      '1. Beoordeel relevantie (1-10) voor een AI governance consultant die Nederlandse MKB-bedrijven bedient',
-      '2. Als score < ' + CONFIG.minRelevanceScore + ', geef terug: {"score": X, "skip": true}',
-      '3. Geef anders deze JSON terug (ALLES in het Nederlands):',
-      '{',
-      '  "score": X,',
-      '  "title": "Nederlandse vertaling van de artikeltitel",',
-      '  "summary": ["punt 1 (max 18 woorden)", "punt 2 (max 18 woorden)", "punt 3 (max 18 woorden)"],',
-      '  "whyMatters": "Wat dit betekent voor organisaties die met AI werken of ermee te maken krijgen (één zin, GEEN vermelding van Digidactics, RouteAI of AISA, puur informatief vanuit het perspectief van de lezer)",',
-      '  "tags": ["één of meer van: Regelgeving, Markt, Vacatures, Technologie, Risico, Vaardigheden, Handhaving"],',
-      '  "url": "artikel url",',
-      '  "opportunity": "INTERN GEBRUIK: Concrete kans of actie voor RouteAI product/positionering (alleen indien echt van toepassing, anders weglaten)",',
-      '  "aisaOpportunity": "INTERN GEBRUIK: Concrete kans of actie voor AISA trainingsprogramma/positionering (alleen indien echt van toepassing, anders weglaten)"',
-      '}',
-      '',
-      'Artikelen:',
-      batch.map((a, idx) => [
-        'Artikel ' + (idx + 1) + ':',
-        'Titel: ' + a.title,
-        'URL: ' + a.link,
-        'Inhoud: ' + a.content,
-      ].join('\n')).join('\n---\n'),
-      '',
-      'Geef een JSON-array terug met één resultaat per artikel.',
-    ].join('\n');
+    const prompt =
+      'Je bent Intelligence Analist voor Digidactics, een Nederlands adviesbureau met twee producten:\n' +
+      '- RouteAI: AI governance platform voor Nederlandse MKB-bedrijven (EU AI Act compliance)\n' +
+      '- AISA: AI Skills Accelerator - cohorttraining voor medewerkers van Nederlandse MKB-bedrijven\n' +
+      '\n' +
+      'BELANGRIJK: Schrijf ALLE output in het Nederlands, ongeacht de taal van het bronartikel.\n' +
+      '\n' +
+      'FOCUS OP:\n' +
+      '- EU AI Act implementatie, deadlines, handhavingsupdates\n' +
+      '- ISO/IEC 42001 & 42005 certificeringsontwikkelingen\n' +
+      '- NIST AI RMF updates\n' +
+      '- AI risico governance frameworks\n' +
+      '- Nederlandse/Europese MKB AI-adoptie en compliance\n' +
+      '- AI-geletterdheid, bijscholing en trainingsbehoeften\n' +
+      '- Handhavingsacties of boetes door toezichthouders\n' +
+      '- Shadow AI en beheer van AI-tools op de werkplek\n' +
+      '- DPO- en juridisch perspectief op AI Act-compliance\n' +
+      '- Rapporten en onderzoek over AI-adoptie, arbeidsmarkt, change management, HR en AI-strategie voor MKB\n' +
+      '\n' +
+      'NEGEER:\n' +
+      '- Uitsluitend Amerikaans beleid (tenzij direct relevant voor EU)\n' +
+      '- Algemene AI-productlanceringen zonder governance-hoek\n' +
+      '- Hype, marketing, persberichten\n' +
+      '- Consumenten-AI apps, AI kunst, entertainment\n' +
+      '\n' +
+      '## STAP 1: Bepaal het inhoudstype\n' +
+      '\n' +
+      'Identificeer eerst het type content:\n' +
+      '- nieuws: actueel nieuwsbericht, persverklaring, blogpost (minder dan 2 weken oud)\n' +
+      '- rapport: onderzoeksrapport, whitepaper, jaarverslag, survey, studie (van consultancy, overheid, universiteit of NGO)\n' +
+      '- analyse: opiniestuk, beschouwing, longread van vakpublicatie (HBR, MIT SMR, McKinsey Insights)\n' +
+      '- regelgeving: officiele publicatie van EU, overheid of toezichthouder\n' +
+      '\n' +
+      'Signalen voor rapport: woorden als rapport, whitepaper, studie, onderzoek, survey, jaarverslag, ' +
+      'outlook, index, barometer, monitor - of afkomstig van: McKinsey, Deloitte, PwC, BCG, KPMG, Gartner, ' +
+      'IDC, Forrester, WEF, OECD, ILO, Rathenau, SER, CBS, CPB, TNO, Cedefop, Eurofound, Stanford HAI, MIT SMR, Dialogic.\n' +
+      '\n' +
+      '## STAP 2: Scoor op basis van inhoudstype\n' +
+      '\n' +
+      'Scoringscriteria voor nieuws (weeg zwaarder op actualiteit):\n' +
+      '- 9-10: Baanbrekend nieuws met directe impact op NL MKB of EU AI Act handhaving\n' +
+      '- 7-8: Relevant nieuws over AI governance, Shadow AI, compliance, arbeidsmarkt AI\n' +
+      '- 5-6: Nuttige context, interessant maar niet urgent\n' +
+      '- 1-4: Te technisch, niet NL/EU relevant, of clickbait\n' +
+      '\n' +
+      'Scoringscriteria voor rapport en analyse (weeg zwaarder op bruikbaarheid):\n' +
+      '- 9-10: Praktisch rapport over AI-adoptie MKB, AI op de werkvloer, change management AI, ' +
+      'upskilling - NL of EU focus. Of diepgaand rapport van gezaghebbende bron (SER, CBS, McKinsey, Cedefop, WEF)\n' +
+      '- 7-8: Internationaal rapport met directe vertaalwaarde naar NL MKB; of diepgaande analyse ' +
+      'van vakpublicatie (MIT SMR, HBR) over AI strategie of workforce\n' +
+      '- 5-6: Relevant maar te algemeen of te technisch voor MKB-doelgroep\n' +
+      '- 1-4: Irrelevant onderwerp, te academisch, of buiten scope\n' +
+      '\n' +
+      'Scoringscriteria voor regelgeving:\n' +
+      '- 9-10: Directe EU AI Act update, handhavingsbesluit, NL implementatie\n' +
+      '- 7-8: Officiele guidance, consultation, of significante beleidswijziging\n' +
+      '- 5-6: Achtergrond, consultatie, voorbereidend document\n' +
+      '\n' +
+      '## STAP 3: Vul de velden in\n' +
+      '\n' +
+      'Als score < ' + CONFIG.minRelevanceScore + ', geef terug: {"score": X, "skip": true}\n' +
+      '\n' +
+      'Geef anders deze JSON terug (ALLES in het Nederlands):\n' +
+      '{\n' +
+      '  "score": X,\n' +
+      '  "contentType": "nieuws" of "rapport" of "analyse" of "regelgeving",\n' +
+      '  "title": "Nederlandse vertaling van de artikeltitel",\n' +
+      '  "summary": ["punt 1 (max 18 woorden)", "punt 2 (max 18 woorden)", "punt 3 (max 18 woorden)"],\n' +
+      '  "whyMatters": "Wat dit betekent voor organisaties die met AI werken (een zin, geen vermelding van Digidactics/RouteAI/AISA, bij rapporten: noem de praktische inzichten)",\n' +
+      '  "tags": ["een of meer van: Regelgeving, Markt, Vacatures, Technologie, Risico, Vaardigheden, Handhaving, Rapport"],\n' +
+      '  "url": "artikel url",\n' +
+      '  "opportunity": "INTERN GEBRUIK: Concrete kans voor RouteAI (alleen indien van toepassing, anders weglaten)",\n' +
+      '  "aisaOpportunity": "INTERN GEBRUIK: Concrete kans voor AISA (alleen indien van toepassing, anders weglaten)"\n' +
+      '}\n' +
+      '\n' +
+      'Artikelen:\n' +
+      batch.map((a, idx) =>
+        'Artikel ' + (idx + 1) + ':\n' +
+        'Titel: ' + a.title + '\n' +
+        'URL: ' + a.link + '\n' +
+        'Inhoud: ' + a.content
+      ).join('\n---\n') +
+      '\n' +
+      'Geef een JSON-array terug met een resultaat per artikel.';
 
     try {
       const message = await anthropic.messages.create({
@@ -227,6 +294,7 @@ async function saveArticlesToSupabase(articles: AnalyzedArticle[]): Promise<void
     tags: a.tags,
     opportunity: a.opportunity || null,
     aisa_opportunity: a.aisaOpportunity || null,
+    content_type: a.contentType ?? 'nieuws',
     run_date: new Date().toISOString().split('T')[0],
   }));
 
@@ -254,7 +322,7 @@ function formatEmailBrief(articles: AnalyzedArticle[]): string {
 
   let html = '<div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto; padding: 20px;">';
   html += '<h1 style="color: #1a202c; border-bottom: 2px solid #4299e1; padding-bottom: 10px;">Dagelijkse AI Governance Intelligence Brief</h1>';
-  html += '<p style="color: #718096;"><strong>' + date + '</strong> &middot; ' + articles.length + ' relevante artikelen &middot; ' + RSS_FEEDS.length + ' bronnen (' + RSS_FEEDS_RAI.length + ' RAI / ' + RSS_FEEDS_AISA.length + ' AISA)</p>';
+  html += '<p style="color: #718096;"><strong>' + date + '</strong> &middot; ' + articles.length + ' relevante artikelen &middot; ' + RSS_FEEDS.length + ' bronnen (' + RSS_FEEDS_RAI.length + ' RAI / ' + RSS_FEEDS_AISA.length + ' AISA / ' + RSS_FEEDS_RAPPORTEN.length + ' Rapporten)</p>';
   html += '<hr style="border: 1px solid #e2e8f0;">';
 
   const sections = [
@@ -289,7 +357,13 @@ function formatEmailBrief(articles: AnalyzedArticle[]): string {
   html += '<hr style="border: 1px solid #e2e8f0;"><h2 style="color: #2d3748;">Geselecteerde Artikelen</h2>';
 
   articles.forEach((article, idx) => {
+    const typeLabel =
+      article.contentType === 'rapport' ? '📄 Rapport' :
+      article.contentType === 'analyse' ? '💡 Analyse' :
+      article.contentType === 'regelgeving' ? '⚖️ Regelgeving' :
+      '📰 Nieuws';
     html += '<div style="margin-bottom: 30px; padding: 15px; border-left: 3px solid #4A5568; background: #f7fafc; border-radius: 4px;">';
+    html += '<p style="margin: 0 0 4px 0; font-size: 11px; color: #718096;">' + typeLabel + '</p>';
     html += '<h3 style="margin: 0 0 5px 0; color: #1a202c;">' + (idx + 1) + '. ' + article.title + '</h3>';
     html += '<p style="color: #718096; font-size: 13px; margin: 0 0 10px 0;">Score: ' + article.score + '/10 &middot; ' + article.tags.join(', ') + '</p>';
     html += '<ul style="margin: 0 0 10px 0; color: #2d3748;">';
