@@ -28,7 +28,7 @@ const ISSUE_INTERVAL_DAYS = 7;
 const MAX_ARTICLES_PER_CATEGORY_EXTERNAL = 4;
 const MAX_ARTICLES_PER_CATEGORY_INTERNAL = 3;
 const MAX_TOTAL_ARTICLES = 20;
-const MAX_CLAUDE_INPUT_ARTICLES = 40;
+const MAX_CLAUDE_INPUT_ARTICLES = 25;
 
 interface SupabaseArticle {
   id: string;
@@ -131,8 +131,10 @@ async function categorizeForExternal(articles: SupabaseArticle[]): Promise<Categ
     'Je bent redacteur van een wekelijkse AI governance nieuwsbrief voor Nederlandse MKB-professionals.',
     'De nieuwsbrief is van Digidactics en gericht op beslissers bij MKB-bedrijven die te maken hebben met de EU AI Act.',
     '',
-    'BELANGRIJK: Gebruik UITSLUITEND de exacte UUIDs die bij elk artikel staan vermeld als "ID: ...".',
-    'Verzin GEEN nieuwe UUIDs. Kopieer de ID letterlijk uit de invoer.',
+    'UUID REGEL - KRITIEK: Kopieer elk article_id EXACT en VOLLEDIG zoals het staat na "ID: " in de invoer.',
+    'Een geldig UUID heeft altijd dit formaat: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (8-4-4-4-12 tekens).',
+    'Kopieer het NOOIT handmatig over - kopieer het letterlijk karakter voor karakter.',
+    'Als je twijfelt over een UUID, laat het artikel dan weg. Verzin NOOIT een UUID.',
     '',
     'SCHRIJFSTIJL:',
     'Informatief en beschouwend, journalistieke vakbladstijl.',
@@ -209,8 +211,10 @@ async function categorizeForInternal(articles: SupabaseArticle[]): Promise<Categ
     '- RouteAI: AI governance platform voor Nederlandse MKB EU AI Act compliance',
     '- AISA: AI Skills Accelerator cohorttraining voor MKB-medewerkers',
     '',
-    'BELANGRIJK: Gebruik UITSLUITEND de exacte UUIDs die bij elk artikel staan vermeld als "ID: ...".',
-    'Verzin GEEN nieuwe UUIDs. Kopieer de ID letterlijk uit de invoer.',
+    'UUID REGEL - KRITIEK: Kopieer elk article_id EXACT en VOLLEDIG zoals het staat na "ID: " in de invoer.',
+    'Een geldig UUID heeft altijd dit formaat: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (8-4-4-4-12 tekens).',
+    'Kopieer het NOOIT handmatig over - kopieer het letterlijk karakter voor karakter.',
+    'Als je twijfelt over een UUID, laat het artikel dan weg. Verzin NOOIT een UUID.',
     '',
     'Schrijf een INTERNE marktanalyse in blogvorm voor de Digidactics-directie.',
     '',
@@ -361,23 +365,49 @@ async function saveIssue(
 
   console.log('Editie ' + type + ' #' + issueNumber + ' aangemaakt: ' + issue.id);
 
+  // Bouw een fuzzy-match map: genormaliseerde titel -> echte article_id
+  const titleToId = new Map<string, string>();
+  const validArticlesMap = new Map<string, string>();
+  articles.forEach(a => {
+    validArticlesMap.set(a.id, a.id);
+    titleToId.set(a.title.toLowerCase().trim(), a.id);
+  });
+
+  function resolveArticleId(article_id: string, title: string): string | null {
+    // Exacte match
+    if (validArticleIds.has(article_id)) return article_id;
+    // UUID te kort of misvormd — probeer op titel te matchen
+    const byTitle = titleToId.get(title.toLowerCase().trim());
+    if (byTitle) {
+      console.warn('UUID hersteld via titel: ' + article_id + ' -> ' + byTitle + ' (' + title + ')');
+      return byTitle;
+    }
+    // Prefix match: Claude knipt soms UUID af
+    for (const realId of validArticleIds) {
+      if (realId.startsWith(article_id.substring(0, 8)) || article_id.startsWith(realId.substring(0, 8))) {
+        console.warn('UUID hersteld via prefix: ' + article_id + ' -> ' + realId + ' (' + title + ')');
+        return realId;
+      }
+    }
+    console.warn('Onbekend article_id gefilterd: ' + article_id + ' (' + title + ')');
+    return null;
+  }
+
   const articleRows = categoryGroups.flatMap((group, groupIdx) =>
     group.articles
-      .filter(article => {
-        const valid = validArticleIds.has(article.article_id);
-        if (!valid) {
-          console.warn('Onbekend article_id gefilterd: ' + article.article_id + ' (' + article.title + ')');
-        }
-        return valid;
+      .map((article, articleIdx) => {
+        const resolvedId = resolveArticleId(article.article_id, article.title);
+        if (!resolvedId) return null;
+        return {
+          issue_id: issue.id,
+          article_id: resolvedId,
+          category: group.category,
+          category_summary: group.summary,
+          display_order: groupIdx * 10 + articleIdx,
+          included: true,
+        };
       })
-      .map((article, articleIdx) => ({
-        issue_id: issue.id,
-        article_id: article.article_id,
-        category: group.category,
-        category_summary: group.summary,
-        display_order: groupIdx * 10 + articleIdx,
-        included: true,
-      }))
+      .filter((row): row is NonNullable<typeof row> => row !== null)
   );
 
   if (articleRows.length > 0) {
