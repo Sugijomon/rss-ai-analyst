@@ -30,12 +30,13 @@ interface Issue {
 }
 
 const CATEGORIES = [
-  'Pijnpunten en kansen',
+  'Knelpunten en kansen',
   'Nieuws EU AI Act',
   'Belangrijkste nieuwsfeiten',
   'Internationale lessen',
   'Technologische ontwikkelingen',
   'Governance en compliance',
+  'Lezenswaardig onderzoek',
 ];
 
 const STATUS_LABELS: Record<string, string> = {
