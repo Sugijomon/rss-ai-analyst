@@ -24,7 +24,6 @@ const CATEGORIES = [
 type Category = typeof CATEGORIES[number];
 
 const MIN_SCORE = 7;
-const ISSUE_INTERVAL_DAYS = 7;
 const MAX_ARTICLES_PER_CATEGORY_EXTERNAL = 4;
 const MAX_ARTICLES_PER_CATEGORY_INTERNAL = 3;
 const MAX_TOTAL_ARTICLES = 20;
@@ -60,6 +59,9 @@ interface CategoryGroup {
 }
 
 // CHECK IF NEW ISSUE NEEDED
+// Logica: kijk of er al een editie is aangemaakt na het begin van deze maandag (UTC).
+// Zo ja: overslaan. Zo nee: aanmaken.
+// Handmatige triggers op andere dagen resetten de teller NIET voor de maandagcron.
 async function shouldCreateNewIssue(): Promise<{ create: boolean; issueNumber: number; periodStart: Date }> {
   const { data: lastIssue } = await supabase
     .from('newsletter_issues')
@@ -69,26 +71,36 @@ async function shouldCreateNewIssue(): Promise<{ create: boolean; issueNumber: n
     .limit(1)
     .single();
 
+  // Bereken het begin van de huidige maandag (UTC)
+  const now = new Date();
+  const dayOfWeek = now.getUTCDay(); // 0=zo, 1=ma, ..., 6=za
+  const dayssinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  const thisMonday = new Date(now);
+  thisMonday.setUTCDate(now.getUTCDate() - dayssinceMonday);
+  thisMonday.setUTCHours(0, 0, 0, 0);
+
   if (!lastIssue) {
+    // Nog nooit een editie gemaakt: maak #1 aan met periodStart 7 dagen geleden
     return {
       create: true,
       issueNumber: 1,
-      periodStart: new Date(Date.now() - ISSUE_INTERVAL_DAYS * 24 * 60 * 60 * 1000),
+      periodStart: new Date(thisMonday.getTime() - 7 * 24 * 60 * 60 * 1000),
     };
   }
 
   const lastCreated = new Date(lastIssue.created_at);
-  const daysSinceLast = (Date.now() - lastCreated.getTime()) / (1000 * 60 * 60 * 24);
 
-  if (daysSinceLast < ISSUE_INTERVAL_DAYS) {
-    console.log('Laatste editie was ' + Math.round(daysSinceLast) + ' dagen geleden - nog geen nieuwe editie nodig');
+  // Al een editie aangemaakt na het begin van deze maandag? Dan overslaan.
+  if (lastCreated >= thisMonday) {
+    console.log('Al een editie aangemaakt deze week (' + lastCreated.toISOString() + ') - overslaan');
     return { create: false, issueNumber: 0, periodStart: new Date() };
   }
 
+  // Nog geen editie deze week: aanmaken
   return {
     create: true,
     issueNumber: lastIssue.issue_number + 1,
-    periodStart: new Date(lastCreated),
+    periodStart: lastCreated,
   };
 }
 
