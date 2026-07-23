@@ -1,10 +1,42 @@
-Stap 1: Pushen naar GitHub
+Persoonlijke commandonotities - nooit echte secrets in dit bestand zetten.
 
-C:\Users\Gebruiker\rss-ai-analyst
-git add app/api/cron/newsletter-draft/route.ts
-git commit -m "feat: newsletter update naar blog & wekelijks"
-git push
+Repository:
+C:\Users\Gebruiker\Documents\Legal Baseline Digidactics\rss-ai-analyst-legal-worktree
 
-Stap 2: Newsletter nu direct genereren (handmatig triggeren) in powershell
+Status controleren:
+git status --short --branch
+git diff --stat
 
-Invoke-WebRequest -Uri "https://rss-ai-analyst.vercel.app/api/cron/newsletter-draft" -Method GET -Headers @{"Authorization" = "Bearer vK9mR3pL7sN2wT8xY4aB6cD1eF5gH0iJ3kM7nP2qZ9r"} -UseBasicParsing
+Wijzigingen bewust stagen:
+git add <bestand-of-map>
+
+Commit maken:
+git commit -m "<beschrijvende-commitboodschap>"
+
+Pushen:
+git push -u origin codex/legal-pipeline
+
+Cron handmatig triggeren:
+
+$cronSecret = "<CRON_SECRET_UIT_PASSWORD_MANAGER>"
+$headers = @{ Authorization = "Bearer $cronSecret" }
+
+Invoke-WebRequest `
+  -Uri "https://rss-ai-analyst.vercel.app/api/cron/daily-brief" `
+  -Method GET `
+  -Headers $headers `
+  -UseBasicParsing
+
+Invoke-WebRequest `
+  -Uri "https://rss-ai-analyst.vercel.app/api/cron/newsletter-draft" `
+  -Method GET `
+  -Headers $headers `
+  -UseBasicParsing
+
+Invoke-WebRequest `
+  -Uri "https://rss-ai-analyst.vercel.app/api/cron/legal-scan" `
+  -Method GET `
+  -Headers $headers `
+  -UseBasicParsing
+
+Voer geen DELETE-, migration- of productiecommando uit vanuit deze notities zonder aparte review.

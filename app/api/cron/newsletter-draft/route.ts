@@ -1,15 +1,6 @@
 import { NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
-import { createClient } from '@supabase/supabase-js';
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
-
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_KEY!
-);
+import { z } from 'zod';
+import { getAnthropic, getSupabase } from '@/lib/server-clients';
 
 const CATEGORIES = [
   'Knelpunten en kansen',
@@ -19,6 +10,7 @@ const CATEGORIES = [
   'Technologische ontwikkelingen',
   'Governance en compliance',
   'Lezenswaardig onderzoek',
+  'Juridische signalen',
 ] as const;
 
 type Category = typeof CATEGORIES[number];
@@ -26,7 +18,6 @@ type Category = typeof CATEGORIES[number];
 const MIN_SCORE = 7;
 const MAX_ARTICLES_PER_CATEGORY_EXTERNAL = 4;
 const MAX_ARTICLES_PER_CATEGORY_INTERNAL = 3;
-const MAX_TOTAL_ARTICLES = 20;
 const MAX_CLAUDE_INPUT_ARTICLES = 25;
 
 interface SupabaseArticle {
@@ -44,12 +35,14 @@ interface SupabaseArticle {
 }
 
 interface CategorizedArticle {
-  article_id: string;
+  article_id: string | null;
+  legal_signal_id?: string;
   category: Category;
   title: string;
   url: string;
   score: number;
   why_matters: string;
+  included?: boolean;
 }
 
 interface CategoryGroup {
@@ -58,11 +51,42 @@ interface CategoryGroup {
   articles: CategorizedArticle[];
 }
 
+interface LegalNewsletterSignal {
+  id: string;
+  source_title: string;
+  canonical_url: string;
+  confidence: number;
+  candidate_summary: string;
+  jurisdiction: string;
+  candidate_type: string;
+}
+
+const CategorySchema = z.enum(CATEGORIES);
+const ClaudeCategorizedArticleSchema = z.object({
+  article_id: z.string().uuid(),
+  category: CategorySchema,
+  title: z.string().min(1).max(500),
+  url: z.string().url(),
+  score: z.number().int().min(1).max(10),
+  why_matters: z.string().min(1).max(2000),
+}).strict();
+
+const ClaudeCategoryGroupSchema = z.object({
+  category: CategorySchema,
+  summary: z.string().min(1).max(3000),
+  articles: z.array(ClaudeCategorizedArticleSchema),
+}).strict();
+
+const ClaudeCategoriesSchema = z.object({
+  categories: z.array(ClaudeCategoryGroupSchema),
+}).strict();
+
 // CHECK IF NEW ISSUE NEEDED
 // Logica: kijk of er al een editie is aangemaakt na het begin van deze maandag (UTC).
 // Zo ja: overslaan. Zo nee: aanmaken.
 // Handmatige triggers op andere dagen resetten de teller NIET voor de maandagcron.
 async function shouldCreateNewIssue(): Promise<{ create: boolean; issueNumber: number; periodStart: Date }> {
+  const supabase = getSupabase();
   const { data: lastIssue } = await supabase
     .from('newsletter_issues')
     .select('issue_number, created_at')
@@ -88,7 +112,9 @@ async function shouldCreateNewIssue(): Promise<{ create: boolean; issueNumber: n
     };
   }
 
-  const lastCreated = new Date(lastIssue.created_at);
+  const lastCreated = lastIssue.created_at
+    ? new Date(lastIssue.created_at)
+    : new Date(thisMonday.getTime() - 7 * 24 * 60 * 60 * 1000);
 
   // Al een editie aangemaakt na het begin van deze maandag? Dan overslaan.
   if (lastCreated >= thisMonday) {
@@ -106,6 +132,7 @@ async function shouldCreateNewIssue(): Promise<{ create: boolean; issueNumber: n
 
 // FETCH ARTICLES FROM SUPABASE
 async function fetchArticlesForPeriod(periodStart: Date): Promise<SupabaseArticle[]> {
+  const supabase = getSupabase();
   const startDate = periodStart.toISOString().split('T')[0];
 
   const { data, error } = await supabase
@@ -122,11 +149,62 @@ async function fetchArticlesForPeriod(periodStart: Date): Promise<SupabaseArticl
   }
 
   console.log((data?.length || 0) + ' artikelen gevonden vanaf ' + startDate);
-  return data || [];
+  return (data || []).map(article => ({
+    ...article,
+    why_matters: article.why_matters || '',
+    tags: article.tags || [],
+  }));
+}
+
+async function fetchLegalSignalsForPeriod(periodStart: Date): Promise<LegalNewsletterSignal[]> {
+  const startDate = periodStart.toISOString();
+  const { data, error } = await getSupabase()
+    .from('legal_signals')
+    .select(
+      'id, source_title, canonical_url, confidence, candidate_summary, jurisdiction, candidate_type'
+    )
+    .gte('created_at', startDate)
+    .in('review_status', ['unreviewed', 'reviewed_relevant'])
+    .order('confidence', { ascending: false })
+    .limit(3);
+
+  if (error) {
+    console.warn('Juridische signalen niet beschikbaar voor nieuwsbrief:', error.message);
+    return [];
+  }
+  return (data || []) as LegalNewsletterSignal[];
+}
+
+function buildLegalCategory(
+  signals: LegalNewsletterSignal[],
+  type: 'external' | 'internal'
+): CategoryGroup[] {
+  if (signals.length === 0) {
+    return [];
+  }
+
+  return [{
+    category: 'Juridische signalen',
+    summary: type === 'external'
+      ? 'Deze kandidaat-signalen vereisen expliciete menselijke selectie voor publicatie en bevestigen geen rechtsstatus.'
+      : 'Deze juridische kandidaat-signalen vereisen menselijke verificatie tegen een primaire bron.',
+    articles: signals.map(signal => ({
+      article_id: null,
+      legal_signal_id: signal.id,
+      category: 'Juridische signalen',
+      title: signal.source_title,
+      url: signal.canonical_url,
+      score: signal.confidence,
+      why_matters:
+        signal.candidate_summary + ' (' + signal.jurisdiction + ', ' + signal.candidate_type + ')',
+      included: type === 'internal',
+    })),
+  }];
 }
 
 // CATEGORIZE FOR EXTERNAL NEWSLETTER
 async function categorizeForExternal(articles: SupabaseArticle[]): Promise<CategoryGroup[]> {
+  const anthropic = getAnthropic();
   const articleList = articles.map((a, idx) => [
     'Artikel ' + (idx + 1) + ':',
     'ID: ' + a.id,
@@ -194,8 +272,8 @@ async function categorizeForExternal(articles: SupabaseArticle[]): Promise<Categ
       return [];
     }
 
-    const parsed = JSON.parse(jsonMatch[0]);
-    return parsed.categories || [];
+    const parsed = ClaudeCategoriesSchema.parse(JSON.parse(jsonMatch[0]));
+    return parsed.categories;
   } catch (error) {
     console.error('Claude externe categorisatie fout:', error);
     return [];
@@ -204,6 +282,7 @@ async function categorizeForExternal(articles: SupabaseArticle[]): Promise<Categ
 
 // CATEGORIZE FOR INTERNAL ANALYSIS
 async function categorizeForInternal(articles: SupabaseArticle[]): Promise<CategoryGroup[]> {
+  const anthropic = getAnthropic();
   const articleList = articles.map((a, idx) => [
     'Artikel ' + (idx + 1) + ':',
     'ID: ' + a.id,
@@ -282,8 +361,8 @@ async function categorizeForInternal(articles: SupabaseArticle[]): Promise<Categ
       return [];
     }
 
-    const parsed = JSON.parse(jsonMatch[0]);
-    return parsed.categories || [];
+    const parsed = ClaudeCategoriesSchema.parse(JSON.parse(jsonMatch[0]));
+    return parsed.categories;
   } catch (error) {
     console.error('Claude interne categorisatie fout:', error);
     return [];
@@ -297,6 +376,7 @@ async function generateIntroText(
   periodEnd: Date,
   type: 'external' | 'internal'
 ): Promise<string> {
+  const anthropic = getAnthropic();
   const topArticles = categoryGroups
     .flatMap(g => g.articles)
     .sort((a, b) => b.score - a.score)
@@ -352,6 +432,7 @@ async function saveIssue(
   validArticleIds: Set<string>,
   articles: SupabaseArticle[]
 ): Promise<string | null> {
+  const supabase = getSupabase();
   const monthYear = periodEnd.toLocaleDateString('nl-NL', { month: 'long', year: 'numeric' });
   const subjectLine = type === 'external'
     ? 'AI Governance Update #' + issueNumber + ' - ' + monthYear
@@ -386,7 +467,8 @@ async function saveIssue(
     titleToId.set(a.title.toLowerCase().trim(), a.id);
   });
 
-  function resolveArticleId(article_id: string, title: string): string | null {
+  function resolveArticleId(article_id: string | null, title: string): string | null {
+    if (!article_id) return null;
     // Exacte match
     if (validArticleIds.has(article_id)) return article_id;
     // UUID te kort of misvormd — probeer op titel te matchen
@@ -409,15 +491,27 @@ async function saveIssue(
   const articleRows = categoryGroups.flatMap((group, groupIdx) =>
     group.articles
       .map((article, articleIdx) => {
+        if (article.legal_signal_id) {
+          return {
+            issue_id: issue.id,
+            article_id: null,
+            legal_signal_id: article.legal_signal_id,
+            category: group.category,
+            category_summary: group.summary,
+            display_order: groupIdx * 10 + articleIdx,
+            included: article.included ?? true,
+          };
+        }
         const resolvedId = resolveArticleId(article.article_id, article.title);
         if (!resolvedId) return null;
         return {
           issue_id: issue.id,
           article_id: resolvedId,
+          legal_signal_id: null,
           category: group.category,
           category_summary: group.summary,
           display_order: groupIdx * 10 + articleIdx,
-          included: true,
+          included: article.included ?? true,
         };
       })
       .filter((row): row is NonNullable<typeof row> => row !== null)
@@ -447,7 +541,8 @@ async function generateNewsletterDraft(): Promise<void> {
   const periodEnd = new Date();
 
   const articles = await fetchArticlesForPeriod(periodStart);
-  if (articles.length === 0) {
+  const legalSignals = await fetchLegalSignalsForPeriod(periodStart);
+  if (articles.length === 0 && legalSignals.length === 0) {
     console.log('Geen artikelen gevonden voor deze periode');
     return;
   }
@@ -456,12 +551,18 @@ async function generateNewsletterDraft(): Promise<void> {
   console.log('Geldige article IDs geladen: ' + validArticleIds.size);
 
   console.log('Claude categoriseert voor externe nieuwsbrief...');
-  const externalGroups = await categorizeForExternal(articles);
+  const externalGroups = articles.length > 0
+    ? await categorizeForExternal(articles)
+    : [];
+  externalGroups.push(...buildLegalCategory(legalSignals, 'external'));
   const externalIntro = await generateIntroText(externalGroups, periodStart, periodEnd, 'external');
   const externalId = await saveIssue(issueNumber, periodStart, periodEnd, externalIntro, externalGroups, 'external', validArticleIds, articles);
 
   console.log('Claude categoriseert voor interne analyse...');
-  const internalGroups = await categorizeForInternal(articles);
+  const internalGroups = articles.length > 0
+    ? await categorizeForInternal(articles)
+    : [];
+  internalGroups.push(...buildLegalCategory(legalSignals, 'internal'));
   const internalIntro = await generateIntroText(internalGroups, periodStart, periodEnd, 'internal');
   const internalId = await saveIssue(issueNumber, periodStart, periodEnd, internalIntro, internalGroups, 'internal', validArticleIds, articles);
 

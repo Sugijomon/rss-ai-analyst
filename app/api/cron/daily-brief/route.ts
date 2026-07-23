@@ -1,101 +1,11 @@
 import { NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
-import Parser from 'rss-parser';
-import { Resend } from 'resend';
-import { createClient } from '@supabase/supabase-js';
+import { z } from 'zod';
+import { getFeedGroupCounts, getFeedsForPipeline } from '@/lib/feeds';
+import { fetchFeedArticles } from '@/lib/rss';
+import { getAnthropic, getResend, getSupabase } from '@/lib/server-clients';
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
-
-const resend = new Resend(process.env.RESEND_API_KEY);
-const parser = new Parser();
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_KEY!
-);
-
-// RSS FEEDS — RAI (RouteAI Intelligence)
-const RSS_FEEDS_RAI = [
-  'https://www.google.com/alerts/feeds/09449303513221250695/712363126844262138',
-  'https://www.google.com/alerts/feeds/09449303513221250695/8360176497618447048',
-  'https://www.google.com/alerts/feeds/09449303513221250695/712363126844260895',
-  'https://www.google.com/alerts/feeds/09449303513221250695/14759970723841580188',
-  'https://www.google.com/alerts/feeds/09449303513221250695/3370223869929194536',
-  'https://www.google.com/alerts/feeds/09449303513221250695/9227181759097594092',
-  'https://www.google.com/alerts/feeds/09449303513221250695/10002060156204655808',
-  'https://www.google.com/alerts/feeds/09449303513221250695/17378552453676393076',
-  'https://www.google.com/alerts/feeds/09449303513221250695/10529135105258354989',
-  'https://www.google.com/alerts/feeds/09449303513221250695/16104860397407571115',
-  'https://www.google.com/alerts/feeds/09449303513221250695/7124011456707508388',
-  'https://www.google.com/alerts/feeds/09449303513221250695/10002060156204656018',
-  'https://www.google.com/alerts/feeds/09449303513221250695/13385062984594143224',
-  'https://www.google.com/alerts/feeds/09449303513221250695/2164771014014474126',
-  'https://www.google.com/alerts/feeds/09449303513221250695/451554340955659707',
-  'https://www.google.com/alerts/feeds/09449303513221250695/8058027391759189925',
-  'https://www.google.com/alerts/feeds/09449303513221250695/8506129854880045759',
-  'https://www.google.com/alerts/feeds/09449303513221250695/1576620731540475628',
-  'https://www.google.com/alerts/feeds/09449303513221250695/11046596549212494694',
-  'https://digital-strategy.ec.europa.eu/en/rss.xml',
-  'https://www.nist.gov/news-events/news/rss.xml',
-  'https://artificialintelligence-news.com/feed/',
-  'https://www.technologyreview.com/feed/',
-];
-
-// RSS FEEDS — AISA (AI Skills Accelerator)
-const RSS_FEEDS_AISA = [
-  'https://www.google.com/alerts/feeds/09449303513221250695/11398596379508912216',
-  'https://www.google.com/alerts/feeds/09449303513221250695/3751838535575008662',
-  'https://www.google.com/alerts/feeds/09449303513221250695/13822444391883320846',
-  'https://www.google.com/alerts/feeds/09449303513221250695/11628233551391557605',
-  'https://www.google.com/alerts/feeds/09449303513221250695/9854549709752547786',
-  'https://www.google.com/alerts/feeds/09449303513221250695/17215868415462242323',
-  'https://www.google.com/alerts/feeds/09449303513221250695/3010114955718549497',
-  'https://www.google.com/alerts/feeds/09449303513221250695/13053141497936131359',
-  'https://www.google.com/alerts/feeds/09449303513221250695/14220739381911567576',
-  'https://www.google.com/alerts/feeds/09449303513221250695/14220739381911565544',
-  'https://www.google.com/alerts/feeds/09449303513221250695/14171728769092608143',
-  'https://www.google.com/alerts/feeds/09449303513221250695/10756906360246997719',
-  'https://www.google.com/alerts/feeds/09449303513221250695/10756906360247000062',
-  'https://www.google.com/alerts/feeds/09449303513221250695/11006387725598065897',
-  'https://www.google.com/alerts/feeds/09449303513221250695/12740235320510231143',
-  'https://www.google.com/alerts/feeds/09449303513221250695/10340594049990774976',
-  'https://www.google.com/alerts/feeds/09449303513221250695/1685465714473872504',
-  'https://www.google.com/alerts/feeds/09449303513221250695/831771200614974644',
-];
-
-// RSS FEEDS — Rapporten & Onderzoek
-const RSS_FEEDS_RAPPORTEN = [
-  // Google Alerts — rapporten van consultancies en NL/EU bronnen
-  'https://www.google.com/alerts/feeds/09449303513221250695/11020912532644878384',
-  'https://www.google.com/alerts/feeds/09449303513221250695/9447431379538733276',
-  'https://www.google.com/alerts/feeds/09449303513221250695/7579506280036186973',
-  'https://www.google.com/alerts/feeds/09449303513221250695/9792893812522834631',
-  'https://www.google.com/alerts/feeds/09449303513221250695/14534094429917281865',
-  'https://www.google.com/alerts/feeds/09449303513221250695/7165356540150727077',
-  'https://www.google.com/alerts/feeds/09449303513221250695/11467018644135564915',
-  'https://www.google.com/alerts/feeds/09449303513221250695/8230374117749793457',
-  'https://www.google.com/alerts/feeds/09449303513221250695/8061218653018401488',
-  'https://www.google.com/alerts/feeds/09449303513221250695/12265904741182742856',
-  'https://www.google.com/alerts/feeds/09449303513221250695/4953389541249954681',
-  'https://www.google.com/alerts/feeds/09449303513221250695/16279712458524784408',
-  'https://www.google.com/alerts/feeds/09449303513221250695/7022290479762771039',
-  // Directe RSS — NL onderzoeksinstellingen
-  'https://www.ser.nl/nl/rss',
-  'https://www.rathenau.nl/nl/rss.xml',
-  'https://www.cbs.nl/nl-nl/rss/longread',
-  'https://www.cpb.nl/rss.xml',
-  // Directe RSS — Europese instellingen
-  'https://www.cedefop.europa.eu/en/rss.xml',
-  'https://www.eurofound.europa.eu/rss.xml',
-  // Directe RSS — Internationale consultancies en think tanks
-  'https://www.mckinsey.com/Insights/rss.aspx',
-  'https://sloanreview.mit.edu/feed/',
-  'https://agenda.weforum.org/feed/',
-  'https://hai.stanford.edu/news/rss.xml',
-];
-
-const RSS_FEEDS = [...RSS_FEEDS_RAI, ...RSS_FEEDS_AISA, ...RSS_FEEDS_RAPPORTEN];
+const DAILY_FEEDS = getFeedsForPipeline('daily-brief');
+const FEED_GROUP_COUNTS = getFeedGroupCounts();
 
 const CONFIG = {
   maxArticlesPerFeed: 3,
@@ -124,45 +34,65 @@ interface AnalyzedArticle {
   aisaOpportunity?: string;
 }
 
+interface LegalBriefSignal {
+  id: string;
+  source_title: string;
+  canonical_url: string;
+  jurisdiction: string;
+  candidate_type: string;
+  candidate_summary: string;
+  confidence: number;
+  change_type: 'new' | 'updated';
+}
+
+const SkippedAnalysisSchema = z.object({
+  score: z.number().int().min(1).max(10),
+  skip: z.literal(true),
+}).passthrough();
+
+const CompletedAnalysisSchema = z.object({
+  score: z.number().int().min(1).max(10),
+  contentType: z.enum(['nieuws', 'rapport', 'analyse', 'regelgeving']),
+  title: z.string().min(1).max(500),
+  summary: z.array(z.string().min(1).max(500)).min(1).max(3),
+  whyMatters: z.string().min(1).max(2000),
+  tags: z.array(z.enum([
+    'Regelgeving',
+    'Markt',
+    'Vacatures',
+    'Technologie',
+    'Risico',
+    'Vaardigheden',
+    'Handhaving',
+    'Rapport',
+  ])).min(1),
+  url: z.string().url(),
+  opportunity: z.string().max(2000).optional(),
+  aisaOpportunity: z.string().max(2000).optional(),
+}).strict();
+
+const AnalysisResultsSchema = z.array(
+  z.union([SkippedAnalysisSchema, CompletedAnalysisSchema])
+);
+
 // FETCH FEEDS
 async function fetchRecentArticles(): Promise<Article[]> {
-  const cutoffDate = new Date(Date.now() - CONFIG.hoursLookback * 60 * 60 * 1000);
-  const allArticles: Article[] = [];
-  const seenLinks = new Set<string>();
+  const { articles } = await fetchFeedArticles(DAILY_FEEDS, {
+    hoursLookback: CONFIG.hoursLookback,
+    maxArticlesPerFeed: CONFIG.maxArticlesPerFeed,
+  });
 
-  for (const feedUrl of RSS_FEEDS) {
-    try {
-      const feed = await parser.parseURL(feedUrl);
-      const recentItems = feed.items
-        .filter(item => {
-          const pubDate = item.pubDate ? new Date(item.pubDate) : new Date();
-          return pubDate > cutoffDate;
-        })
-        .slice(0, CONFIG.maxArticlesPerFeed)
-        .map(item => ({
-          title: item.title || 'Untitled',
-          link: item.link || '',
-          pubDate: item.pubDate ? new Date(item.pubDate) : new Date(),
-          content: item.content || item.contentSnippet || item.summary || '',
-        }))
-        .filter(item => {
-          if (!item.link || seenLinks.has(item.link)) return false;
-          seenLinks.add(item.link);
-          return true;
-        });
-
-      allArticles.push(...recentItems);
-    } catch (error) {
-      console.error('Feed error ' + (RSS_FEEDS.indexOf(feedUrl) + 1) + ':', error);
-    }
-  }
-
-  console.log('Total unique articles: ' + allArticles.length);
-  return allArticles;
+  return articles.map(article => ({
+    title: article.title,
+    link: article.url,
+    pubDate: article.publishedAt,
+    content: article.content,
+  }));
 }
 
 // ANALYZE WITH CLAUDE
 async function analyzeWithClaude(articles: Article[]): Promise<AnalyzedArticle[]> {
+  const anthropic = getAnthropic();
   const analyzed: AnalyzedArticle[] = [];
   const batchSize = 5;
 
@@ -264,8 +194,21 @@ async function analyzeWithClaude(articles: Article[]): Promise<AnalyzedArticle[]
       const responseText = message.content[0].type === 'text' ? message.content[0].text : '';
       const jsonMatch = responseText.match(/\[[\s\S]*\]/);
       if (jsonMatch) {
-        const results = JSON.parse(jsonMatch[0]);
-        const relevant = results.filter((r: { skip?: boolean; score: number }) => !r.skip && r.score >= CONFIG.minRelevanceScore);
+        const results = AnalysisResultsSchema.parse(JSON.parse(jsonMatch[0]));
+        if (results.length !== batch.length) {
+          throw new Error(
+            'Claude returned ' + results.length + ' results for ' + batch.length + ' articles'
+          );
+        }
+        const relevant = results.flatMap((result, resultIndex) => {
+          if ('skip' in result || result.score < CONFIG.minRelevanceScore) {
+            return [];
+          }
+          return [{
+            ...result,
+            url: batch[resultIndex].link,
+          }];
+        });
         analyzed.push(...relevant);
         console.log('Batch ' + (Math.floor(i / batchSize) + 1) + ': ' + relevant.length + '/' + batch.length + ' passed');
       }
@@ -285,6 +228,7 @@ async function analyzeWithClaude(articles: Article[]): Promise<AnalyzedArticle[]
 
 // SAVE TO SUPABASE
 async function saveArticlesToSupabase(articles: AnalyzedArticle[]): Promise<void> {
+  const supabase = getSupabase();
   const rows = articles.map(a => ({
     title: a.title,
     url: a.url,
@@ -306,8 +250,39 @@ async function saveArticlesToSupabase(articles: AnalyzedArticle[]): Promise<void
   else console.log(rows.length + ' articles saved to Supabase');
 }
 
+async function fetchLegalSignalsForBrief(): Promise<LegalBriefSignal[]> {
+  const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await getSupabase()
+    .from('legal_signals')
+    .select(
+      'id, source_title, canonical_url, jurisdiction, candidate_type, candidate_summary, confidence, change_type'
+    )
+    .gte('created_at', cutoff)
+    .in('review_status', ['unreviewed', 'reviewed_relevant'])
+    .order('confidence', { ascending: false })
+    .limit(3);
+
+  if (error) {
+    console.warn('Legal signals unavailable for daily brief:', error.message);
+    return [];
+  }
+  return (data || []) as LegalBriefSignal[];
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
 // FORMAT EMAIL
-function formatEmailBrief(articles: AnalyzedArticle[]): string {
+function formatEmailBrief(
+  articles: AnalyzedArticle[],
+  legalSignals: LegalBriefSignal[]
+): string {
   const date = new Date().toLocaleDateString('nl-NL', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   });
@@ -322,8 +297,25 @@ function formatEmailBrief(articles: AnalyzedArticle[]): string {
 
   let html = '<div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto; padding: 20px;">';
   html += '<h1 style="color: #1a202c; border-bottom: 2px solid #4299e1; padding-bottom: 10px;">Dagelijkse AI Governance Intelligence Brief</h1>';
-  html += '<p style="color: #718096;"><strong>' + date + '</strong> &middot; ' + articles.length + ' relevante artikelen &middot; ' + RSS_FEEDS.length + ' bronnen (' + RSS_FEEDS_RAI.length + ' RAI / ' + RSS_FEEDS_AISA.length + ' AISA / ' + RSS_FEEDS_RAPPORTEN.length + ' Rapporten)</p>';
+  html += '<p style="color: #718096;"><strong>' + date + '</strong> &middot; ' + articles.length + ' relevante artikelen &middot; ' + DAILY_FEEDS.length + ' unieke bronnen (' + FEED_GROUP_COUNTS.rai + ' RAI / ' + FEED_GROUP_COUNTS.aisa + ' AISA / ' + FEED_GROUP_COUNTS.rapporten + ' Rapporten / ' + FEED_GROUP_COUNTS.legal + ' LEGAL, met overlap)</p>';
   html += '<hr style="border: 1px solid #e2e8f0;">';
+
+  if (legalSignals.length > 0) {
+    html += '<h2 style="color:#085041;">Kandidaat juridische signalen</h2>';
+    html += '<p style="color:#718096;font-size:13px;">Menselijke beoordeling is vereist. Deze signalen bevestigen geen rechtsstatus of compliance.</p>';
+    legalSignals.forEach(signal => {
+      html += '<div style="margin-bottom:16px;padding:12px;border-left:3px solid #0f6e56;background:#f2fbf7;">';
+      html += '<p style="margin:0 0 4px;font-size:11px;color:#4a5568;">' +
+        escapeHtml(signal.change_type === 'new' ? 'Nieuw kandidaat-signaal' : 'Gewijzigd kandidaat-signaal') +
+        ' - ' + escapeHtml(signal.jurisdiction) +
+        ' - confidence ' + signal.confidence + '/10</p>';
+      html += '<h3 style="margin:0 0 6px;"><a href="' + escapeHtml(signal.canonical_url) +
+        '" style="color:#0f6e56;">' + escapeHtml(signal.source_title) + '</a></h3>';
+      html += '<p style="margin:0;">' + escapeHtml(signal.candidate_summary) + '</p>';
+      html += '</div>';
+    });
+    html += '<hr style="border: 1px solid #e2e8f0;">';
+  }
 
   const sections = [
     { label: 'Regelgevingssignalen', items: regelgeving, icon: '' },
@@ -381,7 +373,7 @@ function formatEmailBrief(articles: AnalyzedArticle[]): string {
   });
 
   html += '<hr style="border: 1px solid #e2e8f0; margin-top: 30px;">';
-  html += '<p style="color: #a0aec0; font-size: 12px;">Digidactics Intelligence Brief &middot; Powered by Claude &middot; ' + RSS_FEEDS.length + ' bronnen gemonitord</p>';
+  html += '<p style="color: #a0aec0; font-size: 12px;">Digidactics Intelligence Brief &middot; Powered by Claude &middot; ' + DAILY_FEEDS.length + ' unieke bronnen gemonitord</p>';
   html += '</div>';
 
   return html;
@@ -407,14 +399,18 @@ async function processAndSendBrief(): Promise<void> {
 
   await saveArticlesToSupabase(analyzed);
 
-  const emailHtml = formatEmailBrief(analyzed);
+  const legalSignals = await fetchLegalSignalsForBrief();
+  const emailHtml = formatEmailBrief(analyzed, legalSignals);
 
-  await resend.emails.send({
+  const { error } = await getResend().emails.send({
     from: 'AI Analyst <onboarding@resend.dev>',
     to: CONFIG.recipientEmail,
     subject: 'AI Governance Brief - ' + analyzed.length + ' artikelen (' + new Date().toLocaleDateString('nl-NL') + ')',
     html: emailHtml,
   });
+  if (error) {
+    throw new Error('Daily brief email failed: ' + error.message);
+  }
 
   console.log('Email sent successfully');
 }
