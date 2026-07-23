@@ -18,6 +18,10 @@ Alle 65 unieke feeds staan in `lib/feeds.ts`:
 Groepen mogen overlappen. Alle 65 feeds blijven door daily brief gebruikt. De 11
 LEGAL-feeds worden daarnaast door legal-scan verwerkt.
 
+RSS-titels en RSS-inhoud worden voor validatie, AI-analyse en opslag naar platte tekst
+genormaliseerd. Google Alerts-opmaak zoals `<b>` en HTML-entiteiten zoals `&#39;`
+worden daardoor niet letterlijk in mails of nieuwsbriefconcepten getoond.
+
 ## Routes en schema
 
 - `/api/cron/daily-brief`: bestaande redactionele analyse en dagelijkse mail, aangevuld
@@ -36,7 +40,7 @@ De reviewbare migratie maakt:
 De migratie revokeert `anon` en `authenticated` op de nieuwe LEGAL-tabellen. De bestaande
 RLS-policies worden in deze wijziging niet aangepast.
 
-## Wijzigingsdetectie v1
+## Opslag en bronupdates v1
 
 Een SHA-256 hash wordt berekend over titel, canonical URL en RSS-inhoud.
 
@@ -44,8 +48,30 @@ Een SHA-256 hash wordt berekend over titel, canonical URL en RSS-inhoud.
 - Bekende URL met andere hash: `change_type = updated`
 - Bekende URL met dezelfde hash: alleen `last_seen_at` wordt bijgewerkt
 
-De pipeline haalt in v1 geen volledige webpagina's op en controleert dus geen wijzigingen
-die niet in de RSS-inhoud zichtbaar zijn.
+`change_type = updated` betekent in v1 uitsluitend dat de zichtbare RSS-broninhoud is
+gewijzigd. Dit bevestigt geen juridische wijziging. Bronupdates blijven auditbaar in
+`legal_signals`, maar worden niet genotificeerd en niet aan daily brief of nieuwsbrief
+doorgegeven. De pipeline haalt geen volledige webpagina's op.
+
+Verschillende canonical URLs die hetzelfde juridische voorval beschrijven, worden in v1
+niet semantisch samengevoegd. Cross-source gebeurtenisdeduplicatie is een afzonderlijke
+vervolgstap.
+
+## Distributiebeleid
+
+- Alle positief gevalideerde kandidaten worden voor audit opgeslagen.
+- Alleen nieuwe kandidaten met confidence 6 of hoger gaan naar notificatiemail,
+  daily brief en nieuwsbrief.
+- Voor kandidaat-type `other` geldt confidence 7 of hoger.
+- Maximaal drie geschikte juridische signalen worden aan daily brief en
+  nieuwsbriefconcepten toegevoegd.
+- `legal_scan_runs.notifications_sent` telt genotificeerde signalen in de ene
+  samengevoegde mail, niet het aantal verzonden e-mails.
+
+Een nieuwe run wordt overgeslagen als minder dan 60 minuten eerder al een run met status
+`running`, `completed` of `partial` is gestart. De API retourneert dan
+`{"status":"skipped","reason":"recent_run"}`. Dit voorkomt onbedoelde snelle herhaling;
+het is geen databasebrede concurrency-lock.
 
 ## Nieuwsbriefreview
 
@@ -85,5 +111,6 @@ Geen secretwaarde hoort in de repository.
 3. Voeg `LEGAL_NOTIFICATION_EMAIL` toe in Vercel indien een aparte ontvanger gewenst is.
 4. Pas de migratie handmatig toe na goedkeuring.
 5. Deploy daarna de applicatieconfiguratie.
-6. Trigger legal-scan eenmalig handmatig en controleer `legal_scan_runs`.
+6. Trigger legal-scan eenmalig handmatig en controleer `legal_scan_runs`. Start niet
+   opnieuw bij een client-timeout voordat runmetadata en Vercel-logs zijn gecontroleerd.
 7. Controleer de interne mail, daily brief en Review UI voordat extern wordt verzonden.

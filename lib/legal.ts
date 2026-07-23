@@ -1,7 +1,10 @@
 import { z } from 'zod';
 
 export const LEGAL_MODEL = 'claude-sonnet-4-6';
-export const LEGAL_PROMPT_VERSION = 'legal-classifier-v1.1';
+export const LEGAL_PROMPT_VERSION = 'legal-classifier-v1.2';
+export const LEGAL_DISTRIBUTION_MIN_CONFIDENCE = 6;
+export const LEGAL_OTHER_MIN_CONFIDENCE = 7;
+export const LEGAL_RUN_GUARD_MINUTES = 60;
 
 export const CandidateTypeSchema = z.enum([
   'regulation_update',
@@ -63,6 +66,40 @@ export const LegalResultSchema = z.discriminatedUnion('is_legal_change', [
 
 export type LegalResult = z.infer<typeof LegalResultSchema>;
 export type LegalCandidate = z.infer<typeof LegalCandidateSchema>;
+export type CandidateType = z.infer<typeof CandidateTypeSchema>;
+
+interface LegalDistributionCandidate {
+  candidate_type: CandidateType | string;
+  confidence: number;
+  change_type: 'new' | 'updated';
+}
+
+export function isLegalSignalDistributable(
+  signal: LegalDistributionCandidate
+): boolean {
+  if (signal.change_type !== 'new') {
+    return false;
+  }
+
+  const minimumConfidence = signal.candidate_type === 'other'
+    ? LEGAL_OTHER_MIN_CONFIDENCE
+    : LEGAL_DISTRIBUTION_MIN_CONFIDENCE;
+  return signal.confidence >= minimumConfidence;
+}
+
+export function shouldSkipRecentLegalRun(
+  startedAt: string,
+  now: Date = new Date(),
+  guardMinutes = LEGAL_RUN_GUARD_MINUTES
+): boolean {
+  const startedAtMs = new Date(startedAt).getTime();
+  if (Number.isNaN(startedAtMs)) {
+    return false;
+  }
+
+  const elapsedMs = now.getTime() - startedAtMs;
+  return elapsedMs >= 0 && elapsedMs < guardMinutes * 60 * 1000;
+}
 
 export function parseLegalResults(responseText: string, expectedCount: number): LegalResult[] {
   const jsonMatch = responseText.match(/\[[\s\S]*\]/);
@@ -100,6 +137,12 @@ export const LEGAL_SYSTEM_PROMPT = [
   'MOD-AIA-ART4, MOD-AIA-ART50, MOD-AIA-ANNEXIII, MOD-GDPR-DPIA, MOD-MZ, MOD-CORE.',
   '',
   'Een secundaire bron signaleert alleen. Zet primary_source_url dan op null.',
+  'Geef alleen is_legal_change: true bij een concreet nieuw of gewijzigd juridisch signaal:',
+  'een instrument, officiële guidance, handhavingsactie, rechterlijke uitspraak, consultatie of norm.',
+  'Algemene uitleg, opinie, onderzoek, commerciële duiding, implementatieadvies, events en projecten',
+  'zijn geen juridische wijziging. Geef daarvoor is_legal_change: false.',
+  'Gebruik candidate_type other alleen voor een concreet juridisch signaal dat aantoonbaar',
+  'niet in de andere kandidaattypen past.',
   'Verzin nooit identifiers, wetsartikelen, data of bron-URLs.',
   'Gebruik nooit de woorden voldoet, compliant, wettelijk goedgekeurd of juridisch goedgekeurd.',
   '',

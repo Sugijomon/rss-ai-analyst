@@ -1,8 +1,13 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getFeedGroupCounts, getFeedsForPipeline } from '@/lib/feeds';
+import {
+  LEGAL_DISTRIBUTION_MIN_CONFIDENCE,
+  isLegalSignalDistributable,
+} from '@/lib/legal';
 import { fetchFeedArticles } from '@/lib/rss';
 import { getAnthropic, getResend, getSupabase } from '@/lib/server-clients';
+import { normalizeFeedText } from '@/lib/text';
 
 const DAILY_FEEDS = getFeedsForPipeline('daily-brief');
 const FEED_GROUP_COUNTS = getFeedGroupCounts();
@@ -258,15 +263,24 @@ async function fetchLegalSignalsForBrief(): Promise<LegalBriefSignal[]> {
       'id, source_title, canonical_url, jurisdiction, candidate_type, candidate_summary, confidence, change_type'
     )
     .gte('created_at', cutoff)
+    .gte('confidence', LEGAL_DISTRIBUTION_MIN_CONFIDENCE)
+    .eq('change_type', 'new')
     .in('review_status', ['unreviewed', 'reviewed_relevant'])
     .order('confidence', { ascending: false })
-    .limit(3);
+    .limit(50);
 
   if (error) {
     console.warn('Legal signals unavailable for daily brief:', error.message);
     return [];
   }
-  return (data || []) as LegalBriefSignal[];
+  return ((data || []) as LegalBriefSignal[])
+    .filter(isLegalSignalDistributable)
+    .map(signal => ({
+      ...signal,
+      source_title: normalizeFeedText(signal.source_title),
+      candidate_summary: normalizeFeedText(signal.candidate_summary),
+    }))
+    .slice(0, 3);
 }
 
 function escapeHtml(value: string): string {
@@ -306,7 +320,7 @@ function formatEmailBrief(
     legalSignals.forEach(signal => {
       html += '<div style="margin-bottom:16px;padding:12px;border-left:3px solid #0f6e56;background:#f2fbf7;">';
       html += '<p style="margin:0 0 4px;font-size:11px;color:#4a5568;">' +
-        escapeHtml(signal.change_type === 'new' ? 'Nieuw kandidaat-signaal' : 'Gewijzigd kandidaat-signaal') +
+        'Nieuw kandidaat-signaal' +
         ' - ' + escapeHtml(signal.jurisdiction) +
         ' - confidence ' + signal.confidence + '/10</p>';
       html += '<h3 style="margin:0 0 6px;"><a href="' + escapeHtml(signal.canonical_url) +

@@ -5,7 +5,10 @@ import {
   LEGAL_MODEL,
   LEGAL_PROMPT_VERSION,
   LEGAL_SYSTEM_PROMPT,
+  LEGAL_RUN_GUARD_MINUTES,
+  isLegalSignalDistributable,
   parseLegalResults,
+  shouldSkipRecentLegalRun,
   type LegalCandidate,
 } from '@/lib/legal';
 import { getFeedsForPipeline } from '@/lib/feeds';
@@ -97,6 +100,7 @@ async function analyzeArticles(
       const message = await anthropic.messages.create({
         model: LEGAL_MODEL,
         max_tokens: CONFIG.maxTokens,
+        temperature: 0,
         messages: [{ role: 'user', content: buildPrompt(batch) }],
       });
       const responseText = message.content[0].type === 'text' ? message.content[0].text : '';
@@ -259,7 +263,7 @@ function formatNotification(signals: CreatedSignal[]): string {
   for (const signal of signals) {
     html += '<div style="border-left:3px solid #0f6e56;padding:12px;margin:20px 0;background:#f2fbf7;">';
     html += '<p style="margin:0 0 6px;font-size:12px;color:#4a5568;">' +
-      escapeHtml(signal.change_type === 'new' ? 'Nieuw kandidaat-signaal' : 'Gewijzigd kandidaat-signaal') +
+      'Nieuw kandidaat-signaal' +
       ' - ' + escapeHtml(signal.jurisdiction) + ' - confidence ' + signal.confidence + '/10</p>';
     html += '<h2 style="font-size:17px;margin:0 0 8px;">' + escapeHtml(signal.source_title) + '</h2>';
     html += '<p>' + escapeHtml(signal.candidate_summary) + '</p>';
@@ -277,9 +281,27 @@ async function notify(signals: CreatedSignal[]): Promise<number> {
     return 0;
   }
 
+  const distributableSignals = signals.filter(isLegalSignalDistributable);
+  const skippedIds = signals
+    .filter(signal => !isLegalSignalDistributable(signal))
+    .map(signal => signal.id);
   const recipient = process.env.LEGAL_NOTIFICATION_EMAIL || process.env.RECIPIENT_EMAIL;
-  const ids = signals.map(signal => signal.id);
+  const ids = distributableSignals.map(signal => signal.id);
   const supabase = getSupabase();
+
+  if (skippedIds.length > 0) {
+    const { error } = await supabase
+      .from('legal_signals')
+      .update({ notification_status: 'skipped' })
+      .in('id', skippedIds);
+    if (error) {
+      console.error('Skipped legal notification status update failed:', error);
+    }
+  }
+
+  if (distributableSignals.length === 0) {
+    return 0;
+  }
 
   if (!recipient) {
     await supabase
@@ -294,8 +316,8 @@ async function notify(signals: CreatedSignal[]): Promise<number> {
     from: 'Digidactics Legal Monitor <onboarding@resend.dev>',
     to: recipient,
     subject: 'LEGAL - Kandidaat juridische signalen - ' +
-      signals.length + ' nieuw of gewijzigd',
-    html: formatNotification(signals),
+      distributableSignals.length + ' nieuw',
+    html: formatNotification(distributableSignals),
   });
 
   if (error) {
@@ -317,12 +339,38 @@ async function notify(signals: CreatedSignal[]): Promise<number> {
   if (updateError) {
     console.error('Legal notification status update failed:', updateError);
   }
-  return signals.length;
+  return distributableSignals.length;
 }
 
-async function processLegalScan(): Promise<void> {
+async function processLegalScan(): Promise<
+  { status: 'done' } | { status: 'skipped'; reason: 'recent_run' }
+> {
   const supabase = getSupabase();
   const legalFeeds = getFeedsForPipeline('legal-scan');
+  const guardCutoff = new Date(
+    Date.now() - LEGAL_RUN_GUARD_MINUTES * 60 * 1000
+  ).toISOString();
+  const { data: recentRun, error: recentRunError } = await supabase
+    .from('legal_scan_runs')
+    .select('id, started_at, status')
+    .gte('started_at', guardCutoff)
+    .in('status', ['running', 'completed', 'partial'])
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (recentRunError) {
+    throw new Error('Recent legal scan runs could not be checked: ' + recentRunError.message);
+  }
+
+  if (recentRun && shouldSkipRecentLegalRun(recentRun.started_at)) {
+    console.warn(
+      'Legal scan skipped because run ' + recentRun.id +
+      ' started less than ' + LEGAL_RUN_GUARD_MINUTES + ' minutes ago'
+    );
+    return { status: 'skipped', reason: 'recent_run' };
+  }
+
   const { data: run, error: runError } = await supabase
     .from('legal_scan_runs')
     .insert({
@@ -366,6 +414,7 @@ async function processLegalScan(): Promise<void> {
     if (error) {
       console.error('Legal scan run finalization failed:', error);
     }
+    return { status: 'done' };
   } catch (error) {
     await supabase
       .from('legal_scan_runs')
@@ -391,8 +440,8 @@ async function handleCron(request: Request) {
   }
 
   try {
-    await processLegalScan();
-    return NextResponse.json({ status: 'done' }, { status: 200 });
+    const result = await processLegalScan();
+    return NextResponse.json(result, { status: 200 });
   } catch (error) {
     console.error('Legal scan failed:', error);
     return NextResponse.json({ error: 'Failed' }, { status: 500 });

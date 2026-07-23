@@ -1,6 +1,7 @@
 import Parser from 'rss-parser';
 import { z } from 'zod';
 import type { FeedDefinition, SourceLevel } from './feeds';
+import { normalizeFeedText } from './text';
 import { canonicalizeArticleUrl } from './urls';
 
 const parser = new Parser();
@@ -65,10 +66,12 @@ export async function fetchFeedArticles(
           feedId: feedDefinition.id,
           feedLabel: feedDefinition.label,
           sourceLevel: feedDefinition.sourceLevel,
-          title: item.title || 'Untitled',
+          title: normalizeFeedText(item.title || '') || 'Untitled',
           url,
           publishedAt: item.pubDate ? new Date(item.pubDate) : new Date(),
-          content: item.content || item.contentSnippet || item.summary || '',
+          content: normalizeFeedText(
+            item.content || item.contentSnippet || item.summary || ''
+          ),
         });
 
         if (!parsed.success) {

@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import {
+  LEGAL_DISTRIBUTION_MIN_CONFIDENCE,
+  isLegalSignalDistributable,
+} from '@/lib/legal';
 import { getAnthropic, getSupabase } from '@/lib/server-clients';
+import { normalizeFeedText } from '@/lib/text';
 
 const CATEGORIES = [
   'Knelpunten en kansen',
@@ -59,6 +64,7 @@ interface LegalNewsletterSignal {
   candidate_summary: string;
   jurisdiction: string;
   candidate_type: string;
+  change_type: 'new' | 'updated';
 }
 
 const CategorySchema = z.enum(CATEGORIES);
@@ -161,18 +167,27 @@ async function fetchLegalSignalsForPeriod(periodStart: Date): Promise<LegalNewsl
   const { data, error } = await getSupabase()
     .from('legal_signals')
     .select(
-      'id, source_title, canonical_url, confidence, candidate_summary, jurisdiction, candidate_type'
+      'id, source_title, canonical_url, confidence, candidate_summary, jurisdiction, candidate_type, change_type'
     )
     .gte('created_at', startDate)
+    .gte('confidence', LEGAL_DISTRIBUTION_MIN_CONFIDENCE)
+    .eq('change_type', 'new')
     .in('review_status', ['unreviewed', 'reviewed_relevant'])
     .order('confidence', { ascending: false })
-    .limit(3);
+    .limit(50);
 
   if (error) {
     console.warn('Juridische signalen niet beschikbaar voor nieuwsbrief:', error.message);
     return [];
   }
-  return (data || []) as LegalNewsletterSignal[];
+  return ((data || []) as LegalNewsletterSignal[])
+    .filter(isLegalSignalDistributable)
+    .map(signal => ({
+      ...signal,
+      source_title: normalizeFeedText(signal.source_title),
+      candidate_summary: normalizeFeedText(signal.candidate_summary),
+    }))
+    .slice(0, 3);
 }
 
 function buildLegalCategory(
