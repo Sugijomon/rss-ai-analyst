@@ -45,6 +45,9 @@ interface SignalInsert {
   candidate_type: LegalCandidate['candidate_type'];
   candidate_status: 'candidate';
   candidate_legal_status: LegalCandidate['candidate_legal_status'];
+  // Aard van de wijziging zoals de classifier die extraheert (v2). Niet te verwarren met
+  // change_type hieronder, dat de route zelf zet om nieuw vs. bijgewerkt bij te houden.
+  candidate_change_type: LegalCandidate['change_type'];
   jurisdiction: LegalCandidate['jurisdiction'];
   identifier: string | null;
   instrument: string | null;
@@ -213,6 +216,7 @@ async function persistCandidates(
       candidate_type: item.candidate.candidate_type,
       candidate_status: 'candidate',
       candidate_legal_status: item.candidate.candidate_legal_status,
+      candidate_change_type: item.candidate.change_type,
       jurisdiction: item.candidate.jurisdiction,
       identifier: item.candidate.identifier,
       instrument: item.candidate.instrument,
@@ -264,7 +268,7 @@ function formatNotification(signals: CreatedSignal[]): string {
     html += '<div style="border-left:3px solid #0f6e56;padding:12px;margin:20px 0;background:#f2fbf7;">';
     html += '<p style="margin:0 0 6px;font-size:12px;color:#4a5568;">' +
       'Nieuw kandidaat-signaal' +
-      ' - ' + escapeHtml(signal.jurisdiction) + ' - confidence ' + signal.confidence + '/10</p>';
+      ' - ' + escapeHtml(signal.jurisdiction || 'onbekend') + ' - confidence ' + signal.confidence + '/10</p>';
     html += '<h2 style="font-size:17px;margin:0 0 8px;">' + escapeHtml(signal.source_title) + '</h2>';
     html += '<p>' + escapeHtml(signal.candidate_summary) + '</p>';
     html += '<p><strong>Kandidaattype:</strong> ' + escapeHtml(signal.candidate_type) + '</p>';

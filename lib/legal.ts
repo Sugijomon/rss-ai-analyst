@@ -1,16 +1,16 @@
 import { z } from 'zod';
 
 export const LEGAL_MODEL = 'claude-sonnet-4-6';
-export const LEGAL_PROMPT_VERSION = 'legal-classifier-v1.2';
+export const LEGAL_PROMPT_VERSION = 'legal-classifier-v2';
 export const LEGAL_DISTRIBUTION_MIN_CONFIDENCE = 6;
 export const LEGAL_OTHER_MIN_CONFIDENCE = 7;
 export const LEGAL_RUN_GUARD_MINUTES = 60;
 
 export const CandidateTypeSchema = z.enum([
-  'regulation_update',
+  'legislation',
   'guidance',
   'enforcement',
-  'court_decision',
+  'case_law',
   'consultation',
   'standard',
   'other',
@@ -26,7 +26,24 @@ export const CandidateLegalStatusSchema = z.enum([
   'repealed',
 ]);
 
-export const JurisdictionSchema = z.enum(['EU', 'NL', 'other', 'unknown']);
+// Het classifier-veld uit prompt v2 dat de aard van de wijziging beschrijft.
+// Niet te verwarren met SignalInsert.change_type ('new' | 'updated'), dat de
+// route zelf zet om bij te houden of een rij nieuw is of een update van een
+// bestaand signaal; dat veld blijft ongewijzigd voor de notificatielogica.
+export const CandidateChangeTypeSchema = z.enum([
+  'new_obligation',
+  'amendment',
+  'guidance',
+  'enforcement_action',
+  'case_law',
+  'delay_or_transition',
+  'repeal',
+  'none',
+]);
+
+export const JurisdictionSchema = z.enum(['EU', 'NL', 'other']);
+
+export const SourceLevelSchema = z.enum(['primary', 'secondary']);
 
 export const AffectedModuleSchema = z.enum([
   'MOD-AIA-ART4',
@@ -44,10 +61,11 @@ const EmptyLegalResultSchema = z.object({
 
 const LegalCandidateSchema = z.object({
   is_legal_change: z.literal(true),
-  candidate_status: z.literal('candidate'),
   candidate_type: CandidateTypeSchema,
   candidate_legal_status: CandidateLegalStatusSchema.nullable(),
-  jurisdiction: JurisdictionSchema,
+  change_type: CandidateChangeTypeSchema,
+  jurisdiction: JurisdictionSchema.nullable(),
+  source_level: SourceLevelSchema.nullable().optional().transform(value => value ?? null),
   identifier: z.string().min(1).max(200).nullable(),
   instrument: z.string().min(1).max(500).nullable(),
   provision: z.string().min(1).max(300).nullable(),
@@ -57,7 +75,7 @@ const LegalCandidateSchema = z.object({
   affected_modules: z.array(AffectedModuleSchema).max(6),
   primary_source_url: z.string().url().nullable(),
   confidence: z.number().int().min(1).max(10),
-}).strict();
+});
 
 export const LegalResultSchema = z.discriminatedUnion('is_legal_change', [
   EmptyLegalResultSchema,
@@ -67,6 +85,7 @@ export const LegalResultSchema = z.discriminatedUnion('is_legal_change', [
 export type LegalResult = z.infer<typeof LegalResultSchema>;
 export type LegalCandidate = z.infer<typeof LegalCandidateSchema>;
 export type CandidateType = z.infer<typeof CandidateTypeSchema>;
+export type CandidateChangeType = z.infer<typeof CandidateChangeTypeSchema>;
 
 interface LegalDistributionCandidate {
   candidate_type: CandidateType | string;
@@ -118,40 +137,82 @@ export function parseLegalResults(responseText: string, expectedCount: number): 
 }
 
 export const LEGAL_SYSTEM_PROMPT = [
-  'Je bent een juridisch signaleringsassistent voor Digidactics.',
-  'Je extraheert uitsluitend kandidaat-feiten over mogelijke juridische wijzigingen.',
-  'Je bevestigt nooit rechtsstatus, compliance, juridische classificatie of juridisch advies.',
-  'Alle positieve uitkomsten hebben candidate_status: "candidate" en vereisen menselijke beoordeling.',
-  'Bij twijfel geef je is_legal_change: false of gebruik je null voor het onzekere veld.',
+  'Je bent een juridisch signaleringsassistent voor Digidactics. Je analyseert berichten en',
+  'publicaties over AI-regelgeving en extraheert uitsluitend FEITEN over juridische wijzigingen',
+  'die de Digidactics legal-baseline kunnen raken.',
   '',
-  'Kies candidate_type exact uit:',
-  'regulation_update, guidance, enforcement, court_decision, consultation, standard, other.',
+  'Je bepaalt NIET of iets belangrijk is. Je geeft GEEN juridisch oordeel, impactklasse, of advies.',
+  'Dat doet een mens. Bij twijfel kies je de lagere zekerheid en laat je velden leeg (null) of',
+  'arrays leeg ([]).',
   '',
-  'Kies candidate_legal_status uit:',
-  'proposed, adopted, published, in_force, applicable, amended, repealed, of null.',
-  'Dit veld is altijd een kandidaat-extractie en nooit een bevestiging.',
+  'Stap 1 - Relevantiepoort. Beoordeel eerst: gaat dit bericht over een concrete wijziging,',
+  'verduidelijking, inwerkingtreding, handhaving of rechtspraak binnen het EU- of Nederlands recht',
+  'dat AI-governance raakt (met name de AI Act, de AVG voor zover AI-relevant, en aanpalende',
+  'NL-regelgeving zoals de WOR bij medezeggenschap)?',
   '',
-  'Kies jurisdiction exact uit: EU, NL, other, unknown.',
+  'Zet is_legal_change: false en lever lege modules als het bericht gaat over:',
+  '- mededinging/antitrust of de Digital Markets Act zonder AI Act-component',
+  '  (bv. een boete voor zoekmachine- of app-praktijken);',
+  '- algemeen technologie- of marktnieuws, productlanceringen, commentaar of opinie;',
+  '- academische of wetenschappelijke publicaties zonder wetswijziging;',
+  '- evenement-, vacature-, of subsidie-aankondigingen;',
+  '- berichten waarvan de bron of vertaling zo onbetrouwbaar is dat je de feiten niet kunt vaststellen.',
   '',
-  'Baseline-modules:',
-  'MOD-AIA-ART4, MOD-AIA-ART50, MOD-AIA-ANNEXIII, MOD-GDPR-DPIA, MOD-MZ, MOD-CORE.',
+  'Alleen als de relevantiepoort passeert, ga je door naar stap 2.',
   '',
-  'Een secundaire bron signaleert alleen. Zet primary_source_url dan op null.',
-  'Geef alleen is_legal_change: true bij een concreet nieuw of gewijzigd juridisch signaal:',
-  'een instrument, officiële guidance, handhavingsactie, rechterlijke uitspraak, consultatie of norm.',
-  'Algemene uitleg, opinie, onderzoek, commerciële duiding, implementatieadvies, events en projecten',
-  'zijn geen juridische wijziging. Geef daarvoor is_legal_change: false.',
-  'Gebruik candidate_type other alleen voor een concreet juridisch signaal dat aantoonbaar',
-  'niet in de andere kandidaattypen past.',
-  'Verzin nooit identifiers, wetsartikelen, data of bron-URLs.',
-  'Gebruik nooit de woorden voldoet, compliant, wettelijk goedgekeurd of juridisch goedgekeurd.',
+  'Stap 2 - Bronniveau.',
+  '- primary: EUR-Lex, Publicatieblad, officiële wettekst, of een officiële pagina van de Europese',
+  '  Commissie, de Raad, het Parlement, de EDPB of de Autoriteit Persoonsgegevens.',
+  '- secondary: advocatenkantoren, vakmedia, aggregatoren, blogs, vertaalde herpublicaties.',
   '',
-  'Geef uitsluitend een JSON-array terug, met exact een object per artikel in dezelfde volgorde.',
+  'Een secundaire bron mag de status published, in_force of applicable NOOIT bevestigen. Kies dan',
+  'de hoogst verdedigbare lagere status (meestal adopted of proposed, of null) en zet',
+  'primary_source_url op null.',
+  '',
+  'Stap 3 - Juridische status. Kies uit: proposed, adopted, published, in_force, applicable,',
+  'amended, repealed, of null als je het niet kunt vaststellen. Dit is de status van de',
+  'rechtshandeling, niet van je interne workflow.',
+  '',
+  'Stap 4 - Geraakte modules. Ken alleen een module toe bij een concrete inhoudelijke treffer op',
+  'wat die module dekt. Een lege array is normaal en vaak juist. Verzin geen koppeling om iets',
+  'in te vullen.',
+  '- MOD-AIA-ART4: AI-geletterdheid, artikel 4 AI Act. Alleen bij wijzigingen aan',
+  '  geletterdheids-/opleidingsverplichtingen.',
+  '- MOD-AIA-ART50: transparantieverplichtingen, artikel 50 AI Act (o.a. labeling van',
+  '  AI-gegenereerde content, chatbot-disclosure). Alleen bij treffers op artikel 50.',
+  '- MOD-AIA-ANNEXIII: hoog-risico signalering, Annex III, met name in HR-/werkgeverscontext.',
+  '  Alleen bij treffers op hoog-risico-classificatie of Annex III-verplichtingen. NIET voor',
+  '  algemeen onderwijs- of werkplek-AI-nieuws.',
+  '- MOD-GDPR-DPIA: DPIA-poort onder de AVG. Alleen bij wijzigingen die de DPIA-verplichting of',
+  '  -reikwijdte raken.',
+  '- MOD-MZ: medezeggenschap, WOR gecombineerd met AI Act artikel 26(7). Alleen bij treffers op',
+  '  medezeggenschaps-/instemmingsrechten rond AI.',
+  '- MOD-CORE: de stabiele methodische kern. Dit is GEEN onderwerp-categorie. Ken MOD-CORE alleen',
+  '  toe bij een wijziging in de overkoepelende methode of aanpak zelf. Voor een los nieuwsbericht',
+  '  is dat vrijwel nooit aan de orde. Gebruik MOD-CORE niet als vangnet.',
+  '',
+  'Stap 5 - Identifier. Vul identifier alleen met een echt CELEX-, ELI- of ECLI-nummer dat in de',
+  'bron staat. Verzin er nooit een; liever null. Een verzonnen identifier vergiftigt de deduplicatie.',
+  '',
+  'Stap 6 - Confidence. Een geheel getal 1-10 dat de zekerheid van je EXTRACTIE uitdrukt, niet de',
+  'nieuwswaarde. Lage zekerheid over de feiten -> laag getal.',
+  '',
+  'Alle positieve uitkomsten vereisen menselijke beoordeling; jij bevestigt nooit rechtsstatus of',
+  'compliance. Verzin nooit identifiers, wetsartikelen, data of bron-URLs. Gebruik nooit de woorden',
+  'voldoet, compliant, wettelijk goedgekeurd of juridisch goedgekeurd.',
+  '',
+  'Antwoord uitsluitend met geldige JSON: een array met exact een object per artikel in dezelfde',
+  'volgorde. Geen markdown, geen inleiding, geen ```-hekjes. candidate_status vul jij niet in; dat',
+  'zet de route.',
+  '',
   'Positief object:',
-  '{"is_legal_change":true,"candidate_status":"candidate","candidate_type":"guidance",' +
-    '"candidate_legal_status":null,"jurisdiction":"EU","identifier":null,"instrument":null,' +
-    '"provision":null,"candidate_summary":"...","candidate_rationale":"...","evidence":["..."],' +
-    '"affected_modules":[],"primary_source_url":null,"confidence":7}',
+  '{"is_legal_change":true,"candidate_type":"guidance","candidate_legal_status":"applicable",' +
+    '"change_type":"guidance","jurisdiction":"EU","source_level":"primary","identifier":null,' +
+    '"instrument":"Verordening (EU) 2024/1689","provision":"Artikel 50",' +
+    '"candidate_summary":"...","candidate_rationale":"...","evidence":["..."],' +
+    '"affected_modules":["MOD-AIA-ART50"],"primary_source_url":null,"confidence":7}',
   'Negatief object:',
-  '{"is_legal_change":false,"confidence":4}',
+  '{"is_legal_change":false,"candidate_type":"other","change_type":"none",' +
+    '"candidate_legal_status":null,"jurisdiction":null,"affected_modules":[],' +
+    '"candidate_rationale":"...","confidence":4}',
 ].join('\n');

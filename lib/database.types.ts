@@ -105,14 +105,24 @@ export interface Database {
             | 'amended'
             | 'repealed'
             | null;
+          candidate_change_type:
+            | 'new_obligation'
+            | 'amendment'
+            | 'guidance'
+            | 'enforcement_action'
+            | 'case_law'
+            | 'delay_or_transition'
+            | 'repeal'
+            | 'none'
+            | null;
           candidate_rationale: string;
           candidate_status: 'candidate';
           candidate_summary: string;
           candidate_type:
-            | 'regulation_update'
+            | 'legislation'
             | 'guidance'
             | 'enforcement'
-            | 'court_decision'
+            | 'case_law'
             | 'consultation'
             | 'standard'
             | 'other';
@@ -127,7 +137,7 @@ export interface Database {
           id: string;
           identifier: string | null;
           instrument: string | null;
-          jurisdiction: 'EU' | 'NL' | 'other' | 'unknown';
+          jurisdiction: 'EU' | 'NL' | 'other' | null;
           last_seen_at: string;
           model_version: string;
           notification_status: 'pending' | 'sent' | 'failed' | 'skipped';
@@ -150,6 +160,16 @@ export interface Database {
         {
           affected_modules?: string[];
           article_id?: string | null;
+          candidate_change_type?:
+            | 'new_obligation'
+            | 'amendment'
+            | 'guidance'
+            | 'enforcement_action'
+            | 'case_law'
+            | 'delay_or_transition'
+            | 'repeal'
+            | 'none'
+            | null;
           candidate_legal_status?:
             | 'proposed'
             | 'adopted'
@@ -163,10 +183,10 @@ export interface Database {
           candidate_status?: 'candidate';
           candidate_summary: string;
           candidate_type:
-            | 'regulation_update'
+            | 'legislation'
             | 'guidance'
             | 'enforcement'
-            | 'court_decision'
+            | 'case_law'
             | 'consultation'
             | 'standard'
             | 'other';
@@ -181,7 +201,7 @@ export interface Database {
           id?: string;
           identifier?: string | null;
           instrument?: string | null;
-          jurisdiction?: 'EU' | 'NL' | 'other' | 'unknown';
+          jurisdiction?: 'EU' | 'NL' | 'other' | null;
           last_seen_at?: string;
           model_version: string;
           notification_status?: 'pending' | 'sent' | 'failed' | 'skipped';

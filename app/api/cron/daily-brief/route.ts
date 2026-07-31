@@ -43,7 +43,7 @@ interface LegalBriefSignal {
   id: string;
   source_title: string;
   canonical_url: string;
-  jurisdiction: string;
+  jurisdiction: string | null;
   candidate_type: string;
   candidate_summary: string;
   confidence: number;
@@ -321,7 +321,7 @@ function formatEmailBrief(
       html += '<div style="margin-bottom:16px;padding:12px;border-left:3px solid #0f6e56;background:#f2fbf7;">';
       html += '<p style="margin:0 0 4px;font-size:11px;color:#4a5568;">' +
         'Nieuw kandidaat-signaal' +
-        ' - ' + escapeHtml(signal.jurisdiction) +
+        ' - ' + escapeHtml(signal.jurisdiction || 'onbekend') +
         ' - confidence ' + signal.confidence + '/10</p>';
       html += '<h3 style="margin:0 0 6px;"><a href="' + escapeHtml(signal.canonical_url) +
         '" style="color:#0f6e56;">' + escapeHtml(signal.source_title) + '</a></h3>';

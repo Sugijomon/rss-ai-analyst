@@ -62,7 +62,7 @@ interface LegalNewsletterSignal {
   canonical_url: string;
   confidence: number;
   candidate_summary: string;
-  jurisdiction: string;
+  jurisdiction: string | null;
   candidate_type: string;
   change_type: 'new' | 'updated';
 }
@@ -211,7 +211,7 @@ function buildLegalCategory(
       url: signal.canonical_url,
       score: signal.confidence,
       why_matters:
-        signal.candidate_summary + ' (' + signal.jurisdiction + ', ' + signal.candidate_type + ')',
+        signal.candidate_summary + ' (' + (signal.jurisdiction || 'onbekend') + ', ' + signal.candidate_type + ')',
       included: type === 'internal',
     })),
   }];
