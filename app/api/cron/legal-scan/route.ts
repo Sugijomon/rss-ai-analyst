@@ -8,6 +8,7 @@ import {
   LEGAL_RUN_GUARD_MINUTES,
   isLegalSignalDistributable,
   parseLegalResults,
+  sanitizeCandidateLegalStatus,
   shouldSkipRecentLegalRun,
   type LegalCandidate,
 } from '@/lib/legal';
@@ -119,6 +120,10 @@ async function analyzeArticles(
           article,
           candidate: {
             ...result,
+            candidate_legal_status: sanitizeCandidateLegalStatus(
+              result.candidate_legal_status,
+              article.sourceLevel
+            ),
             primary_source_url:
               article.sourceLevel === 'primary' ? article.url : null,
           },

@@ -86,6 +86,31 @@ export type LegalResult = z.infer<typeof LegalResultSchema>;
 export type LegalCandidate = z.infer<typeof LegalCandidateSchema>;
 export type CandidateType = z.infer<typeof CandidateTypeSchema>;
 export type CandidateChangeType = z.infer<typeof CandidateChangeTypeSchema>;
+export type CandidateLegalStatus = z.infer<typeof CandidateLegalStatusSchema>;
+export type SourceLevel = z.infer<typeof SourceLevelSchema>;
+
+// Statussen die alleen een primaire bron (EUR-Lex, Publicatieblad, officiële
+// wettekst) mag bevestigen. Een secundaire bron (advocatenkantoren, vakmedia,
+// blogs) mag dit volgens de classifier-prompt nooit bevestigen; zie
+// sanitizeCandidateLegalStatus.
+const PRIMARY_ONLY_LEGAL_STATUSES: readonly CandidateLegalStatus[] = [
+  'published',
+  'in_force',
+  'applicable',
+];
+
+// Vangnet voor het geval de classifier zijn eigen promptregel niet volgt:
+// dwingt af dat een secundaire bron nooit met een primary-only status wordt
+// opgeslagen, ongeacht wat het model teruggeeft.
+export function sanitizeCandidateLegalStatus(
+  status: CandidateLegalStatus | null,
+  sourceLevel: SourceLevel | null
+): CandidateLegalStatus | null {
+  if (sourceLevel === 'secondary' && status && PRIMARY_ONLY_LEGAL_STATUSES.includes(status)) {
+    return null;
+  }
+  return status;
+}
 
 interface LegalDistributionCandidate {
   candidate_type: CandidateType | string;
