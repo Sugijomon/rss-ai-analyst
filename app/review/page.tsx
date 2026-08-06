@@ -5,7 +5,8 @@ import { useEffect, useState } from 'react';
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 interface Article {
   id: string;
-  article_id: string;
+  article_id: string | null;
+  legal_signal_id: string | null;
   title: string;
   url: string;
   score: number;
@@ -37,6 +38,7 @@ const CATEGORIES = [
   'Technologische ontwikkelingen',
   'Governance en compliance',
   'Lezenswaardig onderzoek',
+  'Juridische signalen',
 ];
 
 const STATUS_LABELS: Record<string, string> = {
@@ -193,7 +195,11 @@ function IssueEditor({
       subject: issue.subject,
       intro_text: issue.intro_text,
       status: newStatus || issue.status,
-      articles: issue.articles.map(a => ({ id: a.id, included: a.included })),
+      articles: issue.articles.map(a => ({
+        id: a.id,
+        legal_signal_id: a.legal_signal_id,
+        included: a.included,
+      })),
     };
     await fetch(`/api/newsletter/issue/${issue.id}`, {
       method: 'PATCH',
@@ -415,6 +421,14 @@ function IssueEditor({
                       <p className="text-sm text-blue-800 italic">{summary}</p>
                     </div>
                   )}
+                  {cat === 'Juridische signalen' && (
+                    <div className="px-6 py-3 bg-amber-50 border-b border-amber-100">
+                      <p className="text-xs text-amber-800">
+                        Kandidaat-signalen. Selectie voor de externe nieuwsbrief geldt als
+                        menselijke relevantiebeoordeling, niet als bevestiging van rechtsstatus.
+                      </p>
+                    </div>
+                  )}
                   <div className="divide-y divide-gray-100">
                     {catArticles.map(article => (
                       <div
@@ -467,13 +481,19 @@ export default function ReviewPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const stored = sessionStorage.getItem('review_auth');
-    if (stored) { setPassword(stored); setUnlocked(true); }
+    const timer = window.setTimeout(() => {
+      const stored = sessionStorage.getItem('review_auth');
+      if (stored) {
+        setLoading(true);
+        setPassword(stored);
+        setUnlocked(true);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {
     if (!unlocked) return;
-    setLoading(true);
     fetch('/api/newsletter/issues', {
       headers: { 'x-review-password': password },
     })
@@ -483,7 +503,15 @@ export default function ReviewPage() {
   }, [unlocked, password]);
 
   if (!unlocked) {
-    return <PasswordGate onUnlock={() => { setPassword(sessionStorage.getItem('review_auth') || ''); setUnlocked(true); }} />;
+    return (
+      <PasswordGate
+        onUnlock={() => {
+          setLoading(true);
+          setPassword(sessionStorage.getItem('review_auth') || '');
+          setUnlocked(true);
+        }}
+      />
+    );
   }
 
   if (loading) {

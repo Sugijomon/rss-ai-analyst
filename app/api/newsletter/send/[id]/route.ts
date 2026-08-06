@@ -1,10 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_KEY!
-);
+import { getSupabase } from '@/lib/server-clients';
 
 function checkAuth(request: Request) {
   return request.headers.get('x-review-password') === process.env.REVIEW_PASSWORD;
@@ -18,10 +13,39 @@ const CATEGORIES = [
   'Technologische ontwikkelingen',
   'Governance en compliance',
   'Lezenswaardig onderzoek',
+  'Juridische signalen',
 ];
 
+interface NewsletterIssue {
+  id: string;
+  issue_number: number;
+  period_start: string;
+  period_end: string;
+  status: string;
+  type: string;
+  subject: string | null;
+  intro_text: string | null;
+}
+
+interface RenderedArticle {
+  id: string;
+  article_id: string | null;
+  legal_signal_id: string | null;
+  category: string;
+  category_summary: string | null;
+  display_order: number | null;
+  included: boolean | null;
+  title: string;
+  url: string;
+  score: number;
+  why_matters: string;
+}
+
 // EXTERNAL — nieuwsbrief opmaak (artikellijst per categorie)
-function buildExternalHtml(issue: any, articles: any[]): string {
+function buildExternalHtml(
+  issue: NewsletterIssue,
+  articles: RenderedArticle[]
+): string {
   const periodStart = new Date(issue.period_start).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long' });
   const periodEnd = new Date(issue.period_end).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' });
 
@@ -38,7 +62,7 @@ function buildExternalHtml(issue: any, articles: any[]): string {
   CATEGORIES.forEach(cat => {
     const catArticles = articles
       .filter(a => a.category === cat && a.included)
-      .sort((a: any, b: any) => a.display_order - b.display_order);
+      .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
 
     if (catArticles.length === 0) return;
 
@@ -50,7 +74,7 @@ function buildExternalHtml(issue: any, articles: any[]): string {
       html += '<p style="font-size: 13px; color: #4a5568; line-height: 1.6; margin: 0 0 12px 0;">' + summary + '</p>';
     }
     html += '<ul style="margin: 0; padding-left: 20px;">';
-    catArticles.forEach((a: any) => {
+    catArticles.forEach(a => {
       html += '<li style="margin-bottom: 10px;">';
       html += '<a href="' + a.url + '" style="color: #4299e1; font-size: 14px; font-weight: 500; text-decoration: none;">' + a.title + '</a>';
       if (a.why_matters) {
@@ -69,14 +93,19 @@ function buildExternalHtml(issue: any, articles: any[]): string {
 }
 
 // INTERNAL — schone blogvorm met tussenkopjes en inline hyperlinks
-function buildInternalHtml(issue: any, articles: any[]): string {
+function buildInternalHtml(
+  issue: NewsletterIssue,
+  articles: RenderedArticle[]
+): string {
   const periodStart = new Date(issue.period_start).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long' });
   const periodEnd = new Date(issue.period_end).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' });
 
   // Bouw lookup van article_id -> {title, url}
   const articleLookup: Record<string, { title: string; url: string }> = {};
-  articles.forEach((a: any) => {
-    articleLookup[a.article_id] = { title: a.title, url: a.url };
+  articles.forEach(a => {
+    if (a.article_id) {
+      articleLookup[a.article_id] = { title: a.title, url: a.url };
+    }
   });
 
   // Vervang [REF:uuid|ankertekst] of [REF:uuid] met HTML-links
@@ -114,8 +143,8 @@ function buildInternalHtml(issue: any, articles: any[]): string {
   // Categorieen als blogsecties — alleen prose, geen artikellijst
   CATEGORIES.forEach(cat => {
     const catArticles = articles
-      .filter((a: any) => a.category === cat && a.included)
-      .sort((a: any, b: any) => a.display_order - b.display_order);
+      .filter(a => a.category === cat && a.included)
+      .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
 
     if (catArticles.length === 0) return;
 
@@ -142,6 +171,7 @@ export async function POST(
   if (!checkAuth(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { id } = await params;
+  const supabase = getSupabase();
 
   const { data: issue, error: issueError } = await supabase
     .from('newsletter_issues')
@@ -152,26 +182,43 @@ export async function POST(
   if (issueError || !issue) {
     return NextResponse.json({ error: 'Editie niet gevonden' }, { status: 404 });
   }
+  if (issue.status === 'sent') {
+    return NextResponse.json({ error: 'Deze editie is al verstuurd' }, { status: 409 });
+  }
 
   const { data: naRows, error: naError } = await supabase
     .from('newsletter_articles')
-    .select('id, category, category_summary, display_order, included, articles ( title, url, score, why_matters )')
+    .select(`
+      id, article_id, legal_signal_id, category, category_summary,
+      display_order, included,
+      articles ( title, url, score, why_matters ),
+      legal_signals ( source_title, canonical_url, confidence, candidate_summary )
+    `)
     .eq('issue_id', id)
     .eq('included', true);
 
   if (naError) return NextResponse.json({ error: naError.message }, { status: 500 });
 
-  const articles = (naRows || []).map((na: any) => ({
-    id: na.id,
-    category: na.category,
-    category_summary: na.category_summary,
-    display_order: na.display_order,
-    included: na.included,
-    title: na.articles?.title || '',
-    url: na.articles?.url || '',
-    score: na.articles?.score || 0,
-    why_matters: na.articles?.why_matters || '',
-  }));
+  const articles = (naRows || []).map(na => {
+    const articleRelation = Array.isArray(na.articles) ? na.articles[0] : na.articles;
+    const legalRelation = Array.isArray(na.legal_signals)
+      ? na.legal_signals[0]
+      : na.legal_signals;
+    return {
+      id: na.id,
+      article_id: na.article_id,
+      legal_signal_id: na.legal_signal_id,
+      category: na.category,
+      category_summary: na.category_summary,
+      display_order: na.display_order,
+      included: na.included,
+      title: articleRelation?.title || legalRelation?.source_title || '',
+      url: articleRelation?.url || legalRelation?.canonical_url || '',
+      score: articleRelation?.score || legalRelation?.confidence || 0,
+      why_matters:
+        articleRelation?.why_matters || legalRelation?.candidate_summary || '',
+    };
+  });
 
   // Kies HTML builder op basis van type
   const isInternal = issue.type === 'internal';
@@ -200,10 +247,13 @@ export async function POST(
       return NextResponse.json({ error: 'Resend: ' + err }, { status: 500 });
     }
 
-    await supabase
+    const { error: statusError } = await supabase
       .from('newsletter_issues')
       .update({ status: 'sent', sent_at: new Date().toISOString() })
       .eq('id', id);
+    if (statusError) {
+      return NextResponse.json({ error: statusError.message }, { status: 500 });
+    }
 
     return NextResponse.json({ ok: true, channel: 'resend-internal' });
   }
@@ -236,15 +286,22 @@ export async function POST(
 
   const brevoData = await brevoRes.json();
 
-  await fetch('https://api.brevo.com/v3/emailCampaigns/' + brevoData.id + '/sendNow', {
+  const sendNowResponse = await fetch('https://api.brevo.com/v3/emailCampaigns/' + brevoData.id + '/sendNow', {
     method: 'POST',
     headers: { 'api-key': process.env.BREVO_API_KEY || '' },
   });
+  if (!sendNowResponse.ok) {
+    const err = await sendNowResponse.text();
+    return NextResponse.json({ error: 'Brevo sendNow: ' + err }, { status: 500 });
+  }
 
-  await supabase
+  const { error: statusError } = await supabase
     .from('newsletter_issues')
     .update({ status: 'sent', sent_at: new Date().toISOString() })
     .eq('id', id);
+  if (statusError) {
+    return NextResponse.json({ error: statusError.message }, { status: 500 });
+  }
 
   return NextResponse.json({ ok: true, channel: 'brevo-external', campaignId: brevoData.id });
 }
