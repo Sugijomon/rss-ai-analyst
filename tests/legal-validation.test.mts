@@ -5,9 +5,9 @@ import { parseLegalResults } from '../lib/legal.ts';
 test('accepts an explicitly labelled legal candidate', () => {
   const result = parseLegalResults(JSON.stringify([{
     is_legal_change: true,
-    candidate_status: 'candidate',
     candidate_type: 'guidance',
     candidate_legal_status: null,
+    change_type: 'guidance',
     jurisdiction: 'EU',
     identifier: null,
     instrument: null,
