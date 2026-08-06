@@ -317,7 +317,7 @@ async function notify(signals: CreatedSignal[]): Promise<number> {
   }
 
   const { error } = await getResend().emails.send({
-    from: 'Digidactics Legal Monitor <onboarding@resend.dev>',
+    from: 'Digidactics Legal Monitor <legal@digidactics.nl>',
     to: recipient,
     subject: 'LEGAL - Kandidaat juridische signalen - ' +
       distributableSignals.length + ' nieuw',
