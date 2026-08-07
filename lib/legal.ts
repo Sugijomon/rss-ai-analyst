@@ -61,6 +61,7 @@ const EmptyLegalResultSchema = z.object({
 
 const LegalCandidateSchema = z.object({
   is_legal_change: z.literal(true),
+  candidate_status: z.literal('candidate').optional(),
   candidate_type: CandidateTypeSchema,
   candidate_legal_status: CandidateLegalStatusSchema.nullable(),
   change_type: CandidateChangeTypeSchema,
@@ -152,13 +153,124 @@ export function parseLegalResults(responseText: string, expectedCount: number): 
   }
 
   const parsed: unknown = JSON.parse(jsonMatch[0]);
-  const results = z.array(LegalResultSchema).parse(parsed);
-  if (results.length !== expectedCount) {
+  const rawResults = z.array(z.unknown()).parse(parsed);
+  if (rawResults.length !== expectedCount) {
     throw new Error(
-      'Claude returned ' + results.length + ' results for ' + expectedCount + ' articles'
+      'Claude returned ' + rawResults.length + ' results for ' + expectedCount + ' articles'
     );
   }
-  return results;
+
+  return rawResults.map((result, index) =>
+    LegalResultSchema.parse(normalizeLegalResult(result, index))
+  );
+}
+
+function normalizedToken(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  return value.trim().toLowerCase().replace(/[\s-]+/g, '_');
+}
+
+function normalizeLegalResult(result: unknown, index: number): unknown {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) {
+    return result;
+  }
+
+  const candidate = result as Record<string, unknown>;
+  if (candidate.is_legal_change !== true) {
+    return result;
+  }
+
+  const candidateTypeAliases: Record<string, CandidateType> = {
+    legislation: 'legislation',
+    regulation: 'legislation',
+    regulation_update: 'legislation',
+    legislative_change: 'legislation',
+    law: 'legislation',
+    guidance: 'guidance',
+    guideline: 'guidance',
+    guidelines: 'guidance',
+    guidance_update: 'guidance',
+    enforcement: 'enforcement',
+    enforcement_action: 'enforcement',
+    case_law: 'case_law',
+    court_decision: 'case_law',
+    court_ruling: 'case_law',
+    judgment: 'case_law',
+    consultation: 'consultation',
+    standard: 'standard',
+    standards: 'standard',
+    other: 'other',
+  };
+  const changeTypeAliases: Record<string, CandidateChangeType> = {
+    new_obligation: 'new_obligation',
+    new_requirement: 'new_obligation',
+    amendment: 'amendment',
+    amended: 'amendment',
+    update: 'amendment',
+    guidance: 'guidance',
+    guidance_update: 'guidance',
+    enforcement: 'enforcement_action',
+    enforcement_action: 'enforcement_action',
+    case_law: 'case_law',
+    court_decision: 'case_law',
+    delay: 'delay_or_transition',
+    transition: 'delay_or_transition',
+    delay_or_transition: 'delay_or_transition',
+    repeal: 'repeal',
+    repealed: 'repeal',
+    none: 'none',
+    no_change: 'none',
+    not_applicable: 'none',
+    other: 'none',
+  };
+  const jurisdictionAliases: Record<string, 'EU' | 'NL' | 'other' | null> = {
+    eu: 'EU',
+    european_union: 'EU',
+    nl: 'NL',
+    netherlands: 'NL',
+    nederland: 'NL',
+    other: 'other',
+    international: 'other',
+    unknown: null,
+    none: null,
+    not_applicable: null,
+  };
+
+  const candidateTypeToken = normalizedToken(candidate.candidate_type);
+  const changeTypeToken = normalizedToken(candidate.change_type);
+  const jurisdictionToken = normalizedToken(candidate.jurisdiction);
+  const normalizedCandidateType = candidateTypeToken
+    ? candidateTypeAliases[candidateTypeToken] || 'other'
+    : 'other';
+  const normalizedChangeType = changeTypeToken
+    ? changeTypeAliases[changeTypeToken] || 'none'
+    : 'none';
+  const normalizedJurisdiction = candidate.jurisdiction === null
+    ? null
+    : jurisdictionToken
+      ? jurisdictionAliases[jurisdictionToken] ?? null
+      : null;
+
+  const changedFields = [
+    normalizedCandidateType !== candidate.candidate_type ? 'candidate_type' : null,
+    normalizedChangeType !== candidate.change_type ? 'change_type' : null,
+    normalizedJurisdiction !== candidate.jurisdiction ? 'jurisdiction' : null,
+  ].filter(Boolean);
+  if (changedFields.length > 0) {
+    console.warn(
+      'Normalized legal classifier fields for result ' + (index + 1) + ': ' +
+      changedFields.join(', ')
+    );
+  }
+
+  return {
+    ...candidate,
+    candidate_type: normalizedCandidateType,
+    change_type: normalizedChangeType,
+    jurisdiction: normalizedJurisdiction,
+  };
 }
 
 export const LEGAL_SYSTEM_PROMPT = [
