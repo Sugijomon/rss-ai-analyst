@@ -297,7 +297,7 @@ export async function POST(
   });
   if (!sendNowResponse.ok) {
     const err = await sendNowResponse.text();
-    return NextResponse.json({ error: 'Brevo sendNow: ' + err }, { status: 500 });
+    return NextResponse.json({ error: 'Brevo sendNow (listId=' + listId + ', campaign=' + brevoData.id + '): ' + err }, { status: 500 });
   }
 
   const { error: statusError } = await supabase
