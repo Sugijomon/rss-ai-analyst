@@ -259,6 +259,11 @@ export async function POST(
   }
 
   // Externe editie — verstuur als campagne via Brevo naar abonneelijst
+  const listId = parseInt((process.env.BREVO_LIST_ID || '').trim(), 10);
+  if (!Number.isInteger(listId)) {
+    return NextResponse.json({ error: 'BREVO_LIST_ID ontbreekt of is ongeldig' }, { status: 500 });
+  }
+
   const brevoPayload = {
     name: 'AI Governance Update #' + issue.issue_number,
     sender: {
@@ -267,7 +272,7 @@ export async function POST(
     },
     subject: issue.subject,
     htmlContent,
-    listIds: [parseInt(process.env.BREVO_LIST_ID || '1')],
+    recipients: { listIds: [listId] },
   };
 
   const brevoRes = await fetch('https://api.brevo.com/v3/emailCampaigns', {
